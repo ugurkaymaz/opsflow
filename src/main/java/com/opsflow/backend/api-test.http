@@ -1,0 +1,186 @@
+POST http://localhost:8080/api/operations
+Content-Type: application/json
+
+{
+  "title": "DTO Test Operation",
+  "description": "Testing request and response DTO",
+  "operationDate": "2026-09-22",
+  "operationTime": "12:30:00",
+  "status": "PLANNED"
+}
+###
+
+GET http://localhost:8080/api/operations
+Accept: application/json
+
+###
+
+GET http://localhost:8080/api/operations/2
+Accept: application/json
+
+###
+
+GET http://localhost:8080/api/operations/3
+Accept: application/json
+
+DELETE http://localhost:8080/api/operations/2
+
+###
+
+GET http://localhost:8080/api/operations/page?page=0&size=10
+Accept: application/json
+
+### Search by date and time range
+
+GET http://localhost:8080/api/operations/search?startDate=2026-09-20&endDate=2026-09-22&startTime=00:00:00&endTime=23:59:59&page=0&size=10
+Accept: application/json
+
+### 1 - Date + Time
+GET http://localhost:8080/api/operations/search?startDate=2026-09-20&endDate=2026-09-22&startTime=00:00:00&endTime=23:59:59&page=0&size=10
+Accept: application/json
+
+###
+
+### 2 - Date only
+GET http://localhost:8080/api/operations/search?startDate=2026-09-20&endDate=2026-09-22&page=0&size=10
+Accept: application/json
+
+###
+
+### 3 - Time only
+GET http://localhost:8080/api/operations/search?startTime=00:00:00&endTime=23:59:59&page=0&size=10
+Accept: application/json
+
+###
+
+### 4 - No filters
+GET http://localhost:8080/api/operations/search?page=0&size=10
+Accept: application/json
+
+### Time only - narrow range
+GET http://localhost:8080/api/operations/search?startTime=11:00:00&endTime=13:00:00&page=0&size=10
+Accept: application/json
+
+### Pagination test - Page 0
+GET http://localhost:8080/api/operations/search?page=0&size=1
+Accept: application/json
+
+### Pagination test - Page 1
+GET http://localhost:8080/api/operations/search?page=1&size=1
+Accept: application/json
+
+### Validation Test - Invalid Request
+POST http://localhost:8080/api/operations
+Content-Type: application/json
+
+{
+  "title": "",
+  "description": "Testing validation",
+  "operationDate": null,
+  "operationTime": null,
+  "status": ""
+}
+
+### Validation Test - Valid Request
+POST http://localhost:8080/api/operations
+Content-Type: application/json
+
+{
+  "title": "Network Check",
+  "description": "Testing valid request after validation",
+  "operationDate": "2026-09-23",
+  "operationTime": "09:15:00",
+  "status": "PLANNED"
+}
+
+### Update Operation - ID 4
+PUT http://localhost:8080/api/operations/4
+Content-Type: application/json
+
+{
+  "title": "Network Maintenance",
+  "description": "Network maintenance operation updated via PUT",
+  "operationDate": "2026-09-24",
+  "operationTime": "14:30:00",
+  "status": "COMPLETED"
+}
+
+### Verify Updated Operation
+GET http://localhost:8080/api/operations/4
+Accept: application/json
+
+### Update - Non-existing ID
+PUT http://localhost:8080/api/operations/9999
+Content-Type: application/json
+
+{
+  "title": "Test Record",
+  "description": "This record should not exist",
+  "operationDate": "2026-09-25",
+  "operationTime": "10:00:00",
+  "status": "PLANNED"
+}
+
+### Update Validation Test
+PUT http://localhost:8080/api/operations/4
+Content-Type: application/json
+
+{
+  "title": "",
+  "description": "Invalid update test",
+  "operationDate": null,
+  "operationTime": null,
+  "status": ""
+}
+
+### Invalid Search - Missing endDate
+GET http://localhost:8080/api/operations/search?startDate=2026-09-20&page=0&size=10
+Accept: application/json
+
+### Invalid Search - Missing endTime
+GET http://localhost:8080/api/operations/search?startTime=10:00:00&page=0&size=10
+Accept: application/json
+
+### Invalid Search - startDate after endDate
+GET http://localhost:8080/api/operations/search?startDate=2026-09-25&endDate=2026-09-20&page=0&size=10
+Accept: application/json
+
+### Invalid Search - startTime after endTime
+GET http://localhost:8080/api/operations/search?startTime=15:00:00&endTime=10:00:00&page=0&size=10
+Accept: application/json
+
+### Invalid Pagination - Negative Page
+GET http://localhost:8080/api/operations/search?page=-1&size=10
+Accept: application/json
+
+### Invalid Pagination - Zero Size
+GET http://localhost:8080/api/operations/search?page=0&size=0
+Accept: application/json
+
+### Invalid Pagination - Size Too Large
+GET http://localhost:8080/api/operations/search?page=0&size=101
+Accept: application/json
+
+### Invalid /page Pagination
+GET http://localhost:8080/api/operations/page?page=0&size=101
+Accept: application/json
+
+### Search - Default Sorting Test
+GET http://localhost:8080/api/operations/search?page=0&size=10
+Accept: application/json
+
+### Dynamic Sorting - Title ASC
+GET http://localhost:8080/api/operations/search?page=0&size=10&sortBy=title&direction=asc
+Accept: application/json
+
+### Invalid Sort Field
+GET http://localhost:8080/api/operations/search?page=0&size=10&sortBy=abc&direction=asc
+Accept: application/json
+
+### Invalid Sort Direction
+GET http://localhost:8080/api/operations/search?page=0&size=10&sortBy=title&direction=test
+Accept: application/json
+
+### Filter + Sort Combined
+GET http://localhost:8080/api/operations/search?startDate=2026-09-20&endDate=2026-09-24&page=0&size=10&sortBy=title&direction=desc
+Accept: application/json
