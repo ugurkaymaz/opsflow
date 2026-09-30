@@ -31,6 +31,33 @@ The application provides a simple interface for creating, managing, searching, a
 - Configurable frontend API URL
 - Automated backend tests
 
+## Screenshots
+
+### Dashboard
+
+Overview of operation statistics, workflow progress, status distribution, and upcoming operations.
+
+![OpsFlow Dashboard](docs/screenshots/dashboard.png)
+
+### Operations Management
+
+Create, manage, filter, sort, and browse operation records.
+
+![OpsFlow Operations](docs/screenshots/operations.png)
+
+### Records
+
+Browse operation records using date and time filters, sorting, and pagination.
+
+![OpsFlow Records](docs/screenshots/records.png)
+
+### Reports
+
+View operation summaries, status distribution, completion statistics, and recent operations.
+
+![OpsFlow Reports](docs/screenshots/reports.png)
+
+
 ## Tech Stack
 
 ### Backend
