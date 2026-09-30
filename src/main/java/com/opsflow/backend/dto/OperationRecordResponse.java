@@ -1,17 +1,56 @@
 package com.opsflow.backend.dto;
 
+import com.opsflow.backend.entity.OperationRecord;
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.time.LocalDate;
 import java.time.LocalTime;
-import com.opsflow.backend.entity.OperationRecord;
 
-
+@Schema(
+        name = "OperationRecordResponse",
+        description = "Response containing the details of an operation record."
+)
 public class OperationRecordResponse {
 
+    @Schema(
+            description = "Unique identifier of the operation.",
+            example = "7"
+    )
     private Long id;
+
+    @Schema(
+            description = "Title of the operation.",
+            example = "Database Backup"
+    )
     private String title;
+
+    @Schema(
+            description = "Detailed description of the operation.",
+            example = "Perform scheduled backup of the production database"
+    )
     private String description;
+
+    @Schema(
+            description = "Date on which the operation is scheduled.",
+            example = "2026-10-05"
+    )
     private LocalDate operationDate;
+
+    @Schema(
+            description = "Time at which the operation is scheduled.",
+            example = "09:30:00"
+    )
     private LocalTime operationTime;
+
+    @Schema(
+            description = "Current status of the operation.",
+            example = "PLANNED",
+            allowableValues = {
+                    "PLANNED",
+                    "IN_PROGRESS",
+                    "COMPLETED"
+            }
+    )
     private String status;
 
     public OperationRecordResponse(OperationRecord record) {

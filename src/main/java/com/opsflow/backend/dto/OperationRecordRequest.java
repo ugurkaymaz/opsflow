@@ -1,30 +1,61 @@
 package com.opsflow.backend.dto;
+
+import com.opsflow.backend.entity.OperationRecord;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+
 import java.time.LocalDate;
 import java.time.LocalTime;
-import com.opsflow.backend.entity.OperationRecord;
 
+@Schema(
+        name = "OperationRecordRequest",
+        description = "Request payload used to create or update an operation record."
+)
 public class OperationRecordRequest {
 
+    @Schema(
+            description = "Title of the operation.",
+            example = "Database Backup"
+    )
     @NotBlank(message = "Title is required")
     @Size(max = 255, message = "Title must not exceed 255 characters")
     private String title;
 
+    @Schema(
+            description = "Detailed description of the operation.",
+            example = "Perform scheduled backup of the production database"
+    )
     @Size(max = 1000, message = "Description must not exceed 1000 characters")
     private String description;
 
+    @Schema(
+            description = "Date on which the operation is scheduled.",
+            example = "2026-10-05"
+    )
     @NotNull(message = "Operation date is required")
     private LocalDate operationDate;
 
+    @Schema(
+            description = "Time at which the operation is scheduled.",
+            example = "09:30:00"
+    )
     @NotNull(message = "Operation time is required")
     private LocalTime operationTime;
 
+    @Schema(
+            description = "Current status of the operation.",
+            example = "PLANNED",
+            allowableValues = {
+                    "PLANNED",
+                    "IN_PROGRESS",
+                    "COMPLETED"
+            }
+    )
     @NotBlank(message = "Status is required")
     @Size(max = 50, message = "Status must not exceed 50 characters")
     private String status;
-
 
     public OperationRecordRequest() {
     }
@@ -78,10 +109,6 @@ public class OperationRecordRequest {
         record.setOperationTime(this.operationTime);
         record.setStatus(this.status);
 
-
-
-
         return record;
     }
-
 }
