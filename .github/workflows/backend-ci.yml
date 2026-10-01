@@ -11,6 +11,12 @@ jobs:
     name: Build, Test and Dockerize Backend
     runs-on: ubuntu-latest
 
+    env:
+      MYSQL_DATABASE: opsflow
+      MYSQL_USER: opsflow_user
+      MYSQL_PASSWORD: ci_test_password
+      MYSQL_ROOT_PASSWORD: ci_root_password
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -30,3 +36,32 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t opsflow-backend:ci .
+
+      - name: Start Docker Compose services
+        run: docker compose up -d --build
+
+      - name: Wait for backend
+        run: |
+          for i in {1..30}; do
+            if curl --fail http://localhost:8080/api/operations; then
+              echo "Backend is ready"
+              exit 0
+            fi
+
+            echo "Waiting for backend..."
+            sleep 5
+          done
+
+          echo "Backend failed to start"
+          docker compose logs
+          exit 1
+
+      - name: Verify MySQL database
+        run: |
+          docker compose exec -T mysql \
+            mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
+            -e "SHOW TABLES;"
+
+      - name: Stop Docker Compose services
+        if: always()
+        run: docker compose down -v
