@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Build and Test Backend
+    name: Build, Test and Dockerize Backend
     runs-on: ubuntu-latest
 
     steps:
@@ -27,3 +27,6 @@ jobs:
 
       - name: Run backend tests
         run: ./mvnw clean test
+
+      - name: Build Docker image
+        run: docker build -t opsflow-backend:ci .
