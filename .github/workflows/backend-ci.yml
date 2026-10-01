@@ -56,6 +56,22 @@ jobs:
           docker compose logs
           exit 1
 
+      - name: Verify frontend
+        run: |
+          for i in {1..30}; do
+            if curl --fail http://localhost:5173/; then
+              echo "Frontend is ready"
+              exit 0
+            fi
+
+            echo "Waiting for frontend..."
+            sleep 5
+          done
+
+          echo "Frontend failed to start"
+          docker compose logs frontend
+          exit 1
+
       - name: Verify MySQL database
         run: |
           docker compose exec -T mysql \
