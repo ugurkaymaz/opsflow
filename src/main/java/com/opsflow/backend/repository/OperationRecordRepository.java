@@ -49,4 +49,36 @@ public interface OperationRecordRepository
             LocalTime endTime,
             Pageable pageable
     );
+    // Status filter
+    Page<OperationRecord> findByStatus(
+            String status,
+            Pageable pageable
+    );
+
+    // Status + Date filter
+    Page<OperationRecord> findByStatusAndOperationDateBetween(
+            String status,
+            LocalDate startDate,
+            LocalDate endDate,
+            Pageable pageable
+    );
+
+    // Status + Time filter
+    Page<OperationRecord> findByStatusAndOperationTimeBetween(
+            String status,
+            LocalTime startTime,
+            LocalTime endTime,
+            Pageable pageable
+    );
+
+    // Status + Date + Time filter
+    Page<OperationRecord> findByStatusAndOperationDateBetweenAndOperationTimeBetween(
+            String status,
+            LocalDate startDate,
+            LocalDate endDate,
+            LocalTime startTime,
+            LocalTime endTime,
+            Pageable pageable
+    );
+
 }

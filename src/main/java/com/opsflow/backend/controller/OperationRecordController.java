@@ -134,7 +134,7 @@ public class OperationRecordController {
 
     @Operation(
             summary = "Search and filter operations",
-            description = "Searches operation records using optional date and time filters, sorting, and server-side pagination."
+            description = "Searches operation records using optional date, time, and status filters, sorting, and server-side pagination."
     )
     @GetMapping("/search")
     public Page<OperationRecordResponse> search(
@@ -153,6 +153,9 @@ public class OperationRecordController {
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.TIME)
             LocalTime endTime,
+
+            @RequestParam(required = false)
+            String status,
 
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
@@ -203,6 +206,7 @@ public class OperationRecordController {
                 endDate,
                 startTime,
                 endTime,
+                status,
                 pageable
         ).map(OperationRecordResponse::new);
     }

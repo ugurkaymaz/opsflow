@@ -77,6 +77,7 @@ public class OperationRecordService {
             LocalDate endDate,
             LocalTime startTime,
             LocalTime endTime,
+            String status,
             Pageable pageable) {
 
         // Both dates must be provided together
@@ -107,11 +108,78 @@ public class OperationRecordService {
             );
         }
 
-        // Date + Time filter
-        if (startDate != null
-                && endDate != null
-                && startTime != null
-                && endTime != null) {
+        // Normalize and validate status
+        if (status != null && !status.isBlank()) {
+
+            status = status.toUpperCase();
+
+            List<String> allowedStatuses = List.of(
+                    "PLANNED",
+                    "IN_PROGRESS",
+                    "COMPLETED"
+            );
+
+            if (!allowedStatuses.contains(status)) {
+                throw new IllegalArgumentException(
+                        "Invalid status: " + status
+                );
+            }
+
+        } else {
+            status = null;
+        }
+
+        // Status + Date + Time
+        if (status != null
+                && startDate != null
+                && startTime != null) {
+
+            return repository
+                    .findByStatusAndOperationDateBetweenAndOperationTimeBetween(
+                            status,
+                            startDate,
+                            endDate,
+                            startTime,
+                            endTime,
+                            pageable
+                    );
+        }
+
+        // Status + Date
+        if (status != null && startDate != null) {
+
+            return repository
+                    .findByStatusAndOperationDateBetween(
+                            status,
+                            startDate,
+                            endDate,
+                            pageable
+                    );
+        }
+
+        // Status + Time
+        if (status != null && startTime != null) {
+
+            return repository
+                    .findByStatusAndOperationTimeBetween(
+                            status,
+                            startTime,
+                            endTime,
+                            pageable
+                    );
+        }
+
+        // Status only
+        if (status != null) {
+
+            return repository.findByStatus(
+                    status,
+                    pageable
+            );
+        }
+
+        // Date + Time
+        if (startDate != null && startTime != null) {
 
             return repository
                     .findByOperationDateBetweenAndOperationTimeBetween(
@@ -124,7 +192,7 @@ public class OperationRecordService {
         }
 
         // Date only
-        if (startDate != null && endDate != null) {
+        if (startDate != null) {
 
             return repository.findByOperationDateBetween(
                     startDate,
@@ -134,7 +202,7 @@ public class OperationRecordService {
         }
 
         // Time only
-        if (startTime != null && endTime != null) {
+        if (startTime != null) {
 
             return repository.findByOperationTimeBetween(
                     startTime,

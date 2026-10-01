@@ -15,6 +15,7 @@ const startDate = ref('')
 const endDate = ref('')
 const startTime = ref('')
 const endTime = ref('')
+const status = ref('')
 
 const filtersActive = ref(false)
 
@@ -71,6 +72,10 @@ async function getOperations(page = 0, useFilters = false) {
       if (endTime.value) {
         params.append('endTime', endTime.value)
       }
+
+      if (status.value) {
+        params.append('status', status.value)
+      }
     }
 
     params.append('page', page)
@@ -106,6 +111,7 @@ function clearFilters() {
   endDate.value = ''
   startTime.value = ''
   endTime.value = ''
+  status.value = ''
 
   sortBy.value = 'operationDate'
   sortDirection.value = 'desc'
@@ -280,6 +286,7 @@ onMounted(() => {
   getOperations(0, false)
 })
 </script>
+
 <template>
   <main>
     <div class="page-header">
@@ -383,6 +390,28 @@ onMounted(() => {
           v-model="endTime"
           type="time"
         />
+      </div>
+
+      <div class="filter-field">
+        <label>Status</label>
+
+        <select v-model="status">
+          <option value="">
+            All
+          </option>
+
+          <option value="PLANNED">
+            Planned
+          </option>
+
+          <option value="IN_PROGRESS">
+            In Progress
+          </option>
+
+          <option value="COMPLETED">
+            Completed
+          </option>
+        </select>
       </div>
 
       <div class="filter-field">
@@ -659,9 +688,7 @@ onMounted(() => {
       <div class="page-controls">
         <button
           :disabled="currentPage === 0"
-          @click="
-            changePage(currentPage - 1)
-          "
+          @click="changePage(currentPage - 1)"
         >
           Previous
         </button>
@@ -672,12 +699,8 @@ onMounted(() => {
         </span>
 
         <button
-          :disabled="
-            currentPage >= totalPages - 1
-          "
-          @click="
-            changePage(currentPage + 1)
-          "
+          :disabled="currentPage >= totalPages - 1"
+          @click="changePage(currentPage + 1)"
         >
           Next
         </button>

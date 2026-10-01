@@ -1,27 +1,30 @@
 package com.opsflow.backend;
 
 import com.opsflow.backend.controller.OperationRecordController;
+import com.opsflow.backend.dto.OperationSummary;
+import com.opsflow.backend.entity.OperationRecord;
 import com.opsflow.backend.service.OperationRecordService;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import com.opsflow.backend.entity.OperationRecord;
-import org.springframework.http.MediaType;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+
 import java.time.LocalDate;
 import java.time.LocalTime;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-
-
-
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(OperationRecordController.class)
@@ -36,39 +39,30 @@ class OperationRecordControllerTest {
     @Test
     void shouldGetAllOperations() throws Exception {
 
-        OperationRecord record = new OperationRecord();
-        record.setId(1L);
-        record.setTitle("System Maintenance");
-        record.setDescription("Database server maintenance");
-        record.setOperationDate(LocalDate.of(2026, 9, 21));
-        record.setOperationTime(LocalTime.of(10, 30));
-        record.setStatus("PLANNED");
+        OperationRecord record = createRecord();
 
-        when(service.getAll()).thenReturn(List.of(record));
+        when(service.getAll())
+                .thenReturn(List.of(record));
 
         mockMvc.perform(get("/api/operations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(1))
-                .andExpect(jsonPath("$[0].title").value("System Maintenance"))
+                .andExpect(jsonPath("$[0].title")
+                        .value("System Maintenance"))
                 .andExpect(jsonPath("$[0].description")
                         .value("Database server maintenance"))
                 .andExpect(jsonPath("$[0].operationDate")
                         .value("2026-09-21"))
                 .andExpect(jsonPath("$[0].operationTime")
                         .value("10:30:00"))
-                .andExpect(jsonPath("$[0].status").value("PLANNED"));
+                .andExpect(jsonPath("$[0].status")
+                        .value("PLANNED"));
     }
 
     @Test
     void shouldGetOperationById() throws Exception {
 
-        OperationRecord record = new OperationRecord();
-        record.setId(1L);
-        record.setTitle("System Maintenance");
-        record.setDescription("Database server maintenance");
-        record.setOperationDate(LocalDate.of(2026, 9, 21));
-        record.setOperationTime(LocalTime.of(10, 30));
-        record.setStatus("PLANNED");
+        OperationRecord record = createRecord();
 
         when(service.getById(1L))
                 .thenReturn(java.util.Optional.of(record));
@@ -88,7 +82,6 @@ class OperationRecordControllerTest {
                         .value("PLANNED"));
     }
 
-
     @Test
     void shouldReturn404WhenOperationNotFound() throws Exception {
 
@@ -103,14 +96,14 @@ class OperationRecordControllerTest {
     void shouldReturn400WhenCreateRequestIsInvalid() throws Exception {
 
         String invalidJson = """
-            {
-              "title": "",
-              "description": "Invalid operation",
-              "operationDate": null,
-              "operationTime": null,
-              "status": ""
-            }
-            """;
+                {
+                  "title": "",
+                  "description": "Invalid operation",
+                  "operationDate": null,
+                  "operationTime": null,
+                  "status": ""
+                }
+                """;
 
         mockMvc.perform(post("/api/operations")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -133,36 +126,42 @@ class OperationRecordControllerTest {
         savedRecord.setId(5L);
         savedRecord.setTitle("Server Upgrade");
         savedRecord.setDescription("Upgrade application server");
-        savedRecord.setOperationDate(LocalDate.of(2026, 9, 25));
-        savedRecord.setOperationTime(LocalTime.of(15, 30));
+        savedRecord.setOperationDate(
+                LocalDate.of(2026, 9, 25)
+        );
+        savedRecord.setOperationTime(
+                LocalTime.of(15, 30)
+        );
         savedRecord.setStatus("PLANNED");
 
-        when(service.create(org.mockito.ArgumentMatchers.any(OperationRecord.class)))
+        when(service.create(any(OperationRecord.class)))
                 .thenReturn(savedRecord);
 
         String validJson = """
-            {
-              "title": "Server Upgrade",
-              "description": "Upgrade application server",
-              "operationDate": "2026-09-25",
-              "operationTime": "15:30:00",
-              "status": "PLANNED"
-            }
-            """;
+                {
+                  "title": "Server Upgrade",
+                  "description": "Upgrade application server",
+                  "operationDate": "2026-09-25",
+                  "operationTime": "15:30:00",
+                  "status": "PLANNED"
+                }
+                """;
 
         mockMvc.perform(post("/api/operations")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validJson))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(5))
-                .andExpect(jsonPath("$.title").value("Server Upgrade"))
+                .andExpect(jsonPath("$.title")
+                        .value("Server Upgrade"))
                 .andExpect(jsonPath("$.description")
                         .value("Upgrade application server"))
                 .andExpect(jsonPath("$.operationDate")
                         .value("2026-09-25"))
                 .andExpect(jsonPath("$.operationTime")
                         .value("15:30:00"))
-                .andExpect(jsonPath("$.status").value("PLANNED"));
+                .andExpect(jsonPath("$.status")
+                        .value("PLANNED"));
     }
 
     @Test
@@ -172,24 +171,30 @@ class OperationRecordControllerTest {
         updatedRecord.setId(5L);
         updatedRecord.setTitle("Updated Server Upgrade");
         updatedRecord.setDescription("Server upgrade completed");
-        updatedRecord.setOperationDate(LocalDate.of(2026, 9, 26));
-        updatedRecord.setOperationTime(LocalTime.of(16, 0));
+        updatedRecord.setOperationDate(
+                LocalDate.of(2026, 9, 26)
+        );
+        updatedRecord.setOperationTime(
+                LocalTime.of(16, 0)
+        );
         updatedRecord.setStatus("COMPLETED");
 
         when(service.update(
-                org.mockito.ArgumentMatchers.eq(5L),
-                org.mockito.ArgumentMatchers.any(OperationRecord.class)))
-                .thenReturn(java.util.Optional.of(updatedRecord));
+                eq(5L),
+                any(OperationRecord.class)
+        )).thenReturn(
+                java.util.Optional.of(updatedRecord)
+        );
 
         String updateJson = """
-            {
-              "title": "Updated Server Upgrade",
-              "description": "Server upgrade completed",
-              "operationDate": "2026-09-26",
-              "operationTime": "16:00:00",
-              "status": "COMPLETED"
-            }
-            """;
+                {
+                  "title": "Updated Server Upgrade",
+                  "description": "Server upgrade completed",
+                  "operationDate": "2026-09-26",
+                  "operationTime": "16:00:00",
+                  "status": "COMPLETED"
+                }
+                """;
 
         mockMvc.perform(put("/api/operations/5")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -209,22 +214,23 @@ class OperationRecordControllerTest {
     }
 
     @Test
-    void shouldReturn404WhenUpdatingNonExistingOperation() throws Exception {
+    void shouldReturn404WhenUpdatingNonExistingOperation()
+            throws Exception {
 
         when(service.update(
-                org.mockito.ArgumentMatchers.eq(9999L),
-                org.mockito.ArgumentMatchers.any(OperationRecord.class)))
-                .thenReturn(java.util.Optional.empty());
+                eq(9999L),
+                any(OperationRecord.class)
+        )).thenReturn(java.util.Optional.empty());
 
         String updateJson = """
-            {
-              "title": "Missing Operation",
-              "description": "This operation does not exist",
-              "operationDate": "2026-09-26",
-              "operationTime": "16:00:00",
-              "status": "PLANNED"
-            }
-            """;
+                {
+                  "title": "Missing Operation",
+                  "description": "This operation does not exist",
+                  "operationDate": "2026-09-26",
+                  "operationTime": "16:00:00",
+                  "status": "PLANNED"
+                }
+                """;
 
         mockMvc.perform(put("/api/operations/9999")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -235,13 +241,7 @@ class OperationRecordControllerTest {
     @Test
     void shouldDeleteOperation() throws Exception {
 
-        OperationRecord record = new OperationRecord();
-        record.setId(5L);
-        record.setTitle("Server Upgrade");
-        record.setDescription("Upgrade application server");
-        record.setOperationDate(LocalDate.of(2026, 9, 25));
-        record.setOperationTime(LocalTime.of(15, 30));
-        record.setStatus("PLANNED");
+        OperationRecord record = createRecord();
 
         when(service.getById(5L))
                 .thenReturn(java.util.Optional.of(record));
@@ -249,11 +249,12 @@ class OperationRecordControllerTest {
         mockMvc.perform(delete("/api/operations/5"))
                 .andExpect(status().isNoContent());
 
-        org.mockito.Mockito.verify(service).delete(5L);
+        verify(service).delete(5L);
     }
 
     @Test
-    void shouldReturn404WhenDeletingNonExistingOperation() throws Exception {
+    void shouldReturn404WhenDeletingNonExistingOperation()
+            throws Exception {
 
         when(service.getById(9999L))
                 .thenReturn(java.util.Optional.empty());
@@ -261,47 +262,38 @@ class OperationRecordControllerTest {
         mockMvc.perform(delete("/api/operations/9999"))
                 .andExpect(status().isNotFound());
 
-        org.mockito.Mockito.verify(
-                service,
-                org.mockito.Mockito.never()
-        ).delete(9999L);
+        verify(service, never())
+                .delete(9999L);
     }
 
     @Test
     void shouldGetOperationsPage() throws Exception {
 
-        OperationRecord record = new OperationRecord();
-        record.setId(1L);
-        record.setTitle("System Maintenance");
-        record.setDescription("Database server maintenance");
-        record.setOperationDate(LocalDate.of(2026, 9, 21));
-        record.setOperationTime(LocalTime.of(10, 30));
-        record.setStatus("PLANNED");
+        OperationRecord record = createRecord();
 
-        org.springframework.data.domain.Page<OperationRecord> page =
-                new org.springframework.data.domain.PageImpl<>(
-                        List.of(record)
-                );
+        Page<OperationRecord> page =
+                new PageImpl<>(List.of(record));
 
-        when(service.getAll(
-                org.mockito.ArgumentMatchers.any(
-                        org.springframework.data.domain.Pageable.class
-                )))
+        when(service.getAll(any(Pageable.class)))
                 .thenReturn(page);
 
         mockMvc.perform(get("/api/operations/page")
                         .param("page", "0")
                         .param("size", "10"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id").value(1))
+                .andExpect(jsonPath("$.content[0].id")
+                        .value(1))
                 .andExpect(jsonPath("$.content[0].title")
                         .value("System Maintenance"))
                 .andExpect(jsonPath("$.content[0].status")
                         .value("PLANNED"))
-                .andExpect(jsonPath("$.totalElements").value(1));
+                .andExpect(jsonPath("$.totalElements")
+                        .value(1));
     }
+
     @Test
-    void shouldReturn400WhenPageSizeExceedsLimit() throws Exception {
+    void shouldReturn400WhenPageSizeExceedsLimit()
+            throws Exception {
 
         mockMvc.perform(get("/api/operations/page")
                         .param("page", "0")
@@ -312,30 +304,21 @@ class OperationRecordControllerTest {
     }
 
     @Test
-    void shouldSearchOperationsWithDateRangeAndSorting() throws Exception {
+    void shouldSearchOperationsWithDateRangeAndSorting()
+            throws Exception {
 
-        OperationRecord record = new OperationRecord();
-        record.setId(1L);
-        record.setTitle("System Maintenance");
-        record.setDescription("Database server maintenance");
-        record.setOperationDate(LocalDate.of(2026, 9, 21));
-        record.setOperationTime(LocalTime.of(10, 30));
-        record.setStatus("PLANNED");
+        OperationRecord record = createRecord();
 
-        org.springframework.data.domain.Page<OperationRecord> resultPage =
-                new org.springframework.data.domain.PageImpl<>(
-                        List.of(record)
-                );
+        Page<OperationRecord> resultPage =
+                new PageImpl<>(List.of(record));
 
         when(service.search(
-                org.mockito.ArgumentMatchers.eq(
-                        LocalDate.of(2026, 9, 20)),
-                org.mockito.ArgumentMatchers.eq(
-                        LocalDate.of(2026, 9, 24)),
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.any(
-                        org.springframework.data.domain.Pageable.class)
+                eq(LocalDate.of(2026, 9, 20)),
+                eq(LocalDate.of(2026, 9, 24)),
+                isNull(),
+                isNull(),
+                isNull(),
+                any(Pageable.class)
         )).thenReturn(resultPage);
 
         mockMvc.perform(get("/api/operations/search")
@@ -346,17 +329,53 @@ class OperationRecordControllerTest {
                         .param("sortBy", "title")
                         .param("direction", "desc"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id").value(1))
+                .andExpect(jsonPath("$.content[0].id")
+                        .value(1))
                 .andExpect(jsonPath("$.content[0].title")
                         .value("System Maintenance"))
                 .andExpect(jsonPath("$.content[0].operationDate")
                         .value("2026-09-21"))
                 .andExpect(jsonPath("$.content[0].status")
                         .value("PLANNED"))
-                .andExpect(jsonPath("$.totalElements").value(1));
+                .andExpect(jsonPath("$.totalElements")
+                        .value(1));
     }
+
     @Test
-    void shouldReturn400WhenSearchSortFieldIsInvalid() throws Exception {
+    void shouldSearchOperationsByStatus()
+            throws Exception {
+
+        OperationRecord record = createRecord();
+        record.setStatus("COMPLETED");
+
+        Page<OperationRecord> resultPage =
+                new PageImpl<>(List.of(record));
+
+        when(service.search(
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq("COMPLETED"),
+                any(Pageable.class)
+        )).thenReturn(resultPage);
+
+        mockMvc.perform(get("/api/operations/search")
+                        .param("status", "COMPLETED")
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id")
+                        .value(1))
+                .andExpect(jsonPath("$.content[0].status")
+                        .value("COMPLETED"))
+                .andExpect(jsonPath("$.totalElements")
+                        .value(1));
+    }
+
+    @Test
+    void shouldReturn400WhenSearchSortFieldIsInvalid()
+            throws Exception {
 
         mockMvc.perform(get("/api/operations/search")
                         .param("page", "0")
@@ -369,7 +388,8 @@ class OperationRecordControllerTest {
     }
 
     @Test
-    void shouldReturn400WhenSearchDirectionIsInvalid() throws Exception {
+    void shouldReturn400WhenSearchDirectionIsInvalid()
+            throws Exception {
 
         mockMvc.perform(get("/api/operations/search")
                         .param("page", "0")
@@ -378,23 +398,27 @@ class OperationRecordControllerTest {
                         .param("direction", "test"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error")
-                        .value("Sort direction must be 'asc' or 'desc'"));
+                        .value(
+                                "Sort direction must be 'asc' or 'desc'"
+                        ));
     }
 
     @Test
-    void shouldReturn400WhenEndDateIsMissing() throws Exception {
+    void shouldReturn400WhenEndDateIsMissing()
+            throws Exception {
 
         when(service.search(
-                org.mockito.ArgumentMatchers.eq(
-                        LocalDate.of(2026, 9, 20)),
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.any(
-                        org.springframework.data.domain.Pageable.class)
-        )).thenThrow(new IllegalArgumentException(
-                "startDate and endDate must be provided together"
-        ));
+                eq(LocalDate.of(2026, 9, 20)),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                any(Pageable.class)
+        )).thenThrow(
+                new IllegalArgumentException(
+                        "startDate and endDate must be provided together"
+                )
+        );
 
         mockMvc.perform(get("/api/operations/search")
                         .param("startDate", "2026-09-20")
@@ -402,14 +426,16 @@ class OperationRecordControllerTest {
                         .param("size", "10"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error")
-                        .value("startDate and endDate must be provided together"));
+                        .value(
+                                "startDate and endDate must be provided together"
+                        ));
     }
 
     @Test
     void shouldGetOperationSummary() throws Exception {
 
-        com.opsflow.backend.dto.OperationSummary summary =
-                new com.opsflow.backend.dto.OperationSummary(
+        OperationSummary summary =
+                new OperationSummary(
                         10L,
                         4L,
                         2L,
@@ -417,33 +443,30 @@ class OperationRecordControllerTest {
                 );
 
         when(service.getSummary(
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull()
+                isNull(),
+                isNull()
         )).thenReturn(summary);
 
         mockMvc.perform(
                         get("/api/operations/summary")
                 )
                 .andExpect(status().isOk())
-                .andExpect(
-                        jsonPath("$.total").value(10)
-                )
-                .andExpect(
-                        jsonPath("$.planned").value(4)
-                )
-                .andExpect(
-                        jsonPath("$.inProgress").value(2)
-                )
-                .andExpect(
-                        jsonPath("$.completed").value(4)
-                );
+                .andExpect(jsonPath("$.total")
+                        .value(10))
+                .andExpect(jsonPath("$.planned")
+                        .value(4))
+                .andExpect(jsonPath("$.inProgress")
+                        .value(2))
+                .andExpect(jsonPath("$.completed")
+                        .value(4));
 
-        org.mockito.Mockito.verify(service)
+        verify(service)
                 .getSummary(null, null);
     }
 
     @Test
-    void shouldGetOperationSummaryForDateRange() throws Exception {
+    void shouldGetOperationSummaryForDateRange()
+            throws Exception {
 
         LocalDate startDate =
                 LocalDate.of(2026, 9, 20);
@@ -451,8 +474,8 @@ class OperationRecordControllerTest {
         LocalDate endDate =
                 LocalDate.of(2026, 9, 25);
 
-        com.opsflow.backend.dto.OperationSummary summary =
-                new com.opsflow.backend.dto.OperationSummary(
+        OperationSummary summary =
+                new OperationSummary(
                         6L,
                         3L,
                         1L,
@@ -476,20 +499,16 @@ class OperationRecordControllerTest {
                                 )
                 )
                 .andExpect(status().isOk())
-                .andExpect(
-                        jsonPath("$.total").value(6)
-                )
-                .andExpect(
-                        jsonPath("$.planned").value(3)
-                )
-                .andExpect(
-                        jsonPath("$.inProgress").value(1)
-                )
-                .andExpect(
-                        jsonPath("$.completed").value(2)
-                );
+                .andExpect(jsonPath("$.total")
+                        .value(6))
+                .andExpect(jsonPath("$.planned")
+                        .value(3))
+                .andExpect(jsonPath("$.inProgress")
+                        .value(1))
+                .andExpect(jsonPath("$.completed")
+                        .value(2));
 
-        org.mockito.Mockito.verify(service)
+        verify(service)
                 .getSummary(
                         startDate,
                         endDate
@@ -520,17 +539,36 @@ class OperationRecordControllerTest {
                                 )
                 )
                 .andExpect(status().isBadRequest())
-                .andExpect(
-                        jsonPath("$.error")
-                                .value(
-                                        "startDate and endDate must be provided together"
-                                )
-                );
+                .andExpect(jsonPath("$.error")
+                        .value(
+                                "startDate and endDate must be provided together"
+                        ));
 
-        org.mockito.Mockito.verify(service)
+        verify(service)
                 .getSummary(
                         startDate,
                         null
                 );
+    }
+
+    private OperationRecord createRecord() {
+
+        OperationRecord record =
+                new OperationRecord();
+
+        record.setId(1L);
+        record.setTitle("System Maintenance");
+        record.setDescription(
+                "Database server maintenance"
+        );
+        record.setOperationDate(
+                LocalDate.of(2026, 9, 21)
+        );
+        record.setOperationTime(
+                LocalTime.of(10, 30)
+        );
+        record.setStatus("PLANNED");
+
+        return record;
     }
 }
