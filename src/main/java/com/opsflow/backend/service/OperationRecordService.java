@@ -1,28 +1,52 @@
 package com.opsflow.backend.service;
 
 import com.opsflow.backend.dto.OperationSummary;
+import com.opsflow.backend.entity.OperationHistory;
 import com.opsflow.backend.entity.OperationRecord;
+import com.opsflow.backend.repository.OperationHistoryRepository;
 import com.opsflow.backend.repository.OperationRecordRepository;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
 public class OperationRecordService {
 
     private final OperationRecordRepository repository;
+    private final OperationHistoryRepository historyRepository;
 
-    public OperationRecordService(OperationRecordRepository repository) {
+    public OperationRecordService(
+            OperationRecordRepository repository,
+            OperationHistoryRepository historyRepository) {
+
         this.repository = repository;
+        this.historyRepository = historyRepository;
     }
 
+    @Transactional
     public OperationRecord create(OperationRecord record) {
-        return repository.save(record);
+
+        OperationRecord savedRecord =
+                repository.save(record);
+
+        saveHistory(
+                savedRecord.getId(),
+                "CREATED",
+                null,
+                savedRecord.getStatus(),
+                savedRecord.getTitle()
+        );
+
+        return savedRecord;
     }
 
     public List<OperationRecord> getAll() {
@@ -37,12 +61,16 @@ public class OperationRecordService {
         return repository.findById(id);
     }
 
+    @Transactional
     public Optional<OperationRecord> update(
             Long id,
             OperationRecord updatedRecord) {
 
         return repository.findById(id)
                 .map(existingRecord -> {
+
+                    String oldStatus =
+                            existingRecord.getStatus();
 
                     existingRecord.setTitle(
                             updatedRecord.getTitle()
@@ -64,12 +92,70 @@ public class OperationRecordService {
                             updatedRecord.getStatus()
                     );
 
-                    return repository.save(existingRecord);
+                    OperationRecord savedRecord =
+                            repository.save(existingRecord);
+
+                    String eventType;
+
+                    if (!Objects.equals(
+                            oldStatus,
+                            savedRecord.getStatus())) {
+
+                        eventType = "STATUS_CHANGED";
+
+                    } else {
+
+                        eventType = "UPDATED";
+                    }
+
+                    saveHistory(
+                            savedRecord.getId(),
+                            eventType,
+                            oldStatus,
+                            savedRecord.getStatus(),
+                            savedRecord.getTitle()
+                    );
+
+                    return savedRecord;
                 });
     }
 
+    @Transactional
     public void delete(Long id) {
-        repository.deleteById(id);
+
+        repository.findById(id)
+                .ifPresent(record -> {
+
+                    saveHistory(
+                            record.getId(),
+                            "DELETED",
+                            record.getStatus(),
+                            null,
+                            record.getTitle()
+                    );
+
+                    repository.delete(record);
+                });
+    }
+
+    private void saveHistory(
+            Long operationId,
+            String eventType,
+            String oldStatus,
+            String newStatus,
+            String operationTitle) {
+
+        OperationHistory history =
+                new OperationHistory(
+                        operationId,
+                        eventType,
+                        oldStatus,
+                        newStatus,
+                        operationTitle,
+                        LocalDateTime.now()
+                );
+
+        historyRepository.save(history);
     }
 
     public Page<OperationRecord> search(
@@ -82,6 +168,7 @@ public class OperationRecordService {
 
         // Both dates must be provided together
         if ((startDate == null) != (endDate == null)) {
+
             throw new IllegalArgumentException(
                     "startDate and endDate must be provided together"
             );
@@ -89,20 +176,25 @@ public class OperationRecordService {
 
         // Both times must be provided together
         if ((startTime == null) != (endTime == null)) {
+
             throw new IllegalArgumentException(
                     "startTime and endTime must be provided together"
             );
         }
 
         // Validate date range
-        if (startDate != null && startDate.isAfter(endDate)) {
+        if (startDate != null
+                && startDate.isAfter(endDate)) {
+
             throw new IllegalArgumentException(
                     "startDate must not be after endDate"
             );
         }
 
         // Validate time range
-        if (startTime != null && startTime.isAfter(endTime)) {
+        if (startTime != null
+                && startTime.isAfter(endTime)) {
+
             throw new IllegalArgumentException(
                     "startTime must not be after endTime"
             );
@@ -113,19 +205,22 @@ public class OperationRecordService {
 
             status = status.toUpperCase();
 
-            List<String> allowedStatuses = List.of(
-                    "PLANNED",
-                    "IN_PROGRESS",
-                    "COMPLETED"
-            );
+            List<String> allowedStatuses =
+                    List.of(
+                            "PLANNED",
+                            "IN_PROGRESS",
+                            "COMPLETED"
+                    );
 
             if (!allowedStatuses.contains(status)) {
+
                 throw new IllegalArgumentException(
                         "Invalid status: " + status
                 );
             }
 
         } else {
+
             status = null;
         }
 
@@ -146,7 +241,8 @@ public class OperationRecordService {
         }
 
         // Status + Date
-        if (status != null && startDate != null) {
+        if (status != null
+                && startDate != null) {
 
             return repository
                     .findByStatusAndOperationDateBetween(
@@ -158,7 +254,8 @@ public class OperationRecordService {
         }
 
         // Status + Time
-        if (status != null && startTime != null) {
+        if (status != null
+                && startTime != null) {
 
             return repository
                     .findByStatusAndOperationTimeBetween(
@@ -179,7 +276,8 @@ public class OperationRecordService {
         }
 
         // Date + Time
-        if (startDate != null && startTime != null) {
+        if (startDate != null
+                && startTime != null) {
 
             return repository
                     .findByOperationDateBetweenAndOperationTimeBetween(
@@ -194,21 +292,23 @@ public class OperationRecordService {
         // Date only
         if (startDate != null) {
 
-            return repository.findByOperationDateBetween(
-                    startDate,
-                    endDate,
-                    pageable
-            );
+            return repository
+                    .findByOperationDateBetween(
+                            startDate,
+                            endDate,
+                            pageable
+                    );
         }
 
         // Time only
         if (startTime != null) {
 
-            return repository.findByOperationTimeBetween(
-                    startTime,
-                    endTime,
-                    pageable
-            );
+            return repository
+                    .findByOperationTimeBetween(
+                            startTime,
+                            endTime,
+                            pageable
+                    );
         }
 
         // No filters
@@ -218,16 +318,23 @@ public class OperationRecordService {
     // General summary
     public OperationSummary getSummary() {
 
-        long total = repository.count();
+        long total =
+                repository.count();
 
         long planned =
-                repository.countByStatus("PLANNED");
+                repository.countByStatus(
+                        "PLANNED"
+                );
 
         long inProgress =
-                repository.countByStatus("IN_PROGRESS");
+                repository.countByStatus(
+                        "IN_PROGRESS"
+                );
 
         long completed =
-                repository.countByStatus("COMPLETED");
+                repository.countByStatus(
+                        "COMPLETED"
+                );
 
         return new OperationSummary(
                 total,
@@ -243,12 +350,16 @@ public class OperationRecordService {
             LocalDate endDate) {
 
         // No dates -> return general summary
-        if (startDate == null && endDate == null) {
+        if (startDate == null
+                && endDate == null) {
+
             return getSummary();
         }
 
         // Only one date supplied
-        if (startDate == null || endDate == null) {
+        if (startDate == null
+                || endDate == null) {
+
             throw new IllegalArgumentException(
                     "startDate and endDate must be provided together"
             );
@@ -256,37 +367,42 @@ public class OperationRecordService {
 
         // Invalid date order
         if (startDate.isAfter(endDate)) {
+
             throw new IllegalArgumentException(
                     "startDate must not be after endDate"
             );
         }
 
         long total =
-                repository.countByOperationDateBetween(
-                        startDate,
-                        endDate
-                );
+                repository
+                        .countByOperationDateBetween(
+                                startDate,
+                                endDate
+                        );
 
         long planned =
-                repository.countByStatusAndOperationDateBetween(
-                        "PLANNED",
-                        startDate,
-                        endDate
-                );
+                repository
+                        .countByStatusAndOperationDateBetween(
+                                "PLANNED",
+                                startDate,
+                                endDate
+                        );
 
         long inProgress =
-                repository.countByStatusAndOperationDateBetween(
-                        "IN_PROGRESS",
-                        startDate,
-                        endDate
-                );
+                repository
+                        .countByStatusAndOperationDateBetween(
+                                "IN_PROGRESS",
+                                startDate,
+                                endDate
+                        );
 
         long completed =
-                repository.countByStatusAndOperationDateBetween(
-                        "COMPLETED",
-                        startDate,
-                        endDate
-                );
+                repository
+                        .countByStatusAndOperationDateBetween(
+                                "COMPLETED",
+                                startDate,
+                                endDate
+                        );
 
         return new OperationSummary(
                 total,

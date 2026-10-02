@@ -2,6 +2,7 @@ package com.opsflow.backend;
 
 import com.opsflow.backend.entity.OperationRecord;
 import com.opsflow.backend.repository.OperationRecordRepository;
+import com.opsflow.backend.repository.OperationHistoryRepository;
 import com.opsflow.backend.service.OperationRecordService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,12 +24,22 @@ import static org.mockito.Mockito.when;
 class OperationRecordServiceTest {
 
     private OperationRecordRepository repository;
+    private OperationHistoryRepository historyRepository;
     private OperationRecordService service;
 
     @BeforeEach
     void setUp() {
-        repository = Mockito.mock(OperationRecordRepository.class);
-        service = new OperationRecordService(repository);
+        repository =
+                Mockito.mock(OperationRecordRepository.class);
+
+        historyRepository =
+                Mockito.mock(OperationHistoryRepository.class);
+
+        service =
+                new OperationRecordService(
+                        repository,
+                        historyRepository
+                );
     }
 
     @Test
@@ -875,4 +886,148 @@ class OperationRecordServiceTest {
 
         verifyNoInteractions(repository);
     }
+
+    @Test
+    void shouldCreateHistoryWhenOperationIsCreated() {
+
+        OperationRecord record = new OperationRecord();
+        record.setId(1L);
+        record.setTitle("System Maintenance");
+        record.setStatus("PLANNED");
+
+        when(repository.save(record))
+                .thenReturn(record);
+
+        service.create(record);
+
+        verify(repository).save(record);
+
+        verify(historyRepository).save(
+                Mockito.argThat(history ->
+                        history.getOperationId().equals(1L)
+                                && history.getEventType().equals("CREATED")
+                                && history.getOldStatus() == null
+                                && history.getNewStatus().equals("PLANNED")
+                                && history.getOperationTitle()
+                                .equals("System Maintenance")
+                )
+        );
+    }
+
+    @Test
+    void shouldCreateUpdatedHistoryWhenStatusDoesNotChange() {
+
+        OperationRecord existingRecord = new OperationRecord();
+        existingRecord.setId(1L);
+        existingRecord.setTitle("System Maintenance");
+        existingRecord.setDescription("Old Description");
+        existingRecord.setStatus("PLANNED");
+
+        OperationRecord updatedRecord = new OperationRecord();
+        updatedRecord.setTitle("Updated Maintenance");
+        updatedRecord.setDescription("Updated Description");
+        updatedRecord.setOperationDate(
+                LocalDate.of(2026, 10, 10)
+        );
+        updatedRecord.setOperationTime(
+                LocalTime.of(11, 30)
+        );
+        updatedRecord.setStatus("PLANNED");
+
+        when(repository.findById(1L))
+                .thenReturn(
+                        java.util.Optional.of(existingRecord)
+                );
+
+        when(repository.save(existingRecord))
+                .thenReturn(existingRecord);
+
+        service.update(1L, updatedRecord);
+
+        verify(historyRepository).save(
+                Mockito.argThat(history ->
+                        history.getOperationId().equals(1L)
+                                && history.getEventType().equals("UPDATED")
+                                && history.getOldStatus().equals("PLANNED")
+                                && history.getNewStatus().equals("PLANNED")
+                                && history.getOperationTitle()
+                                .equals("Updated Maintenance")
+                )
+        );
+    }
+
+    @Test
+    void shouldCreateStatusChangedHistoryWhenStatusChanges() {
+
+        OperationRecord existingRecord = new OperationRecord();
+        existingRecord.setId(1L);
+        existingRecord.setTitle("System Maintenance");
+        existingRecord.setStatus("PLANNED");
+
+        OperationRecord updatedRecord = new OperationRecord();
+        updatedRecord.setTitle("System Maintenance");
+        updatedRecord.setDescription("Status changed");
+        updatedRecord.setOperationDate(
+                LocalDate.of(2026, 10, 10)
+        );
+        updatedRecord.setOperationTime(
+                LocalTime.of(11, 30)
+        );
+        updatedRecord.setStatus("IN_PROGRESS");
+
+        when(repository.findById(1L))
+                .thenReturn(
+                        java.util.Optional.of(existingRecord)
+                );
+
+        when(repository.save(existingRecord))
+                .thenReturn(existingRecord);
+
+        service.update(1L, updatedRecord);
+
+        verify(historyRepository).save(
+                Mockito.argThat(history ->
+                        history.getOperationId().equals(1L)
+                                && history.getEventType()
+                                .equals("STATUS_CHANGED")
+                                && history.getOldStatus()
+                                .equals("PLANNED")
+                                && history.getNewStatus()
+                                .equals("IN_PROGRESS")
+                                && history.getOperationTitle()
+                                .equals("System Maintenance")
+                )
+        );
+    }
+
+    @Test
+    void shouldCreateDeletedHistoryWhenOperationIsDeleted() {
+
+        OperationRecord record = new OperationRecord();
+        record.setId(1L);
+        record.setTitle("System Maintenance");
+        record.setStatus("COMPLETED");
+
+        when(repository.findById(1L))
+                .thenReturn(
+                        java.util.Optional.of(record)
+                );
+
+        service.delete(1L);
+
+        verify(historyRepository).save(
+                Mockito.argThat(history ->
+                        history.getOperationId().equals(1L)
+                                && history.getEventType().equals("DELETED")
+                                && history.getOldStatus()
+                                .equals("COMPLETED")
+                                && history.getNewStatus() == null
+                                && history.getOperationTitle()
+                                .equals("System Maintenance")
+                )
+        );
+
+        verify(repository).delete(record);
+    }
+
 }
