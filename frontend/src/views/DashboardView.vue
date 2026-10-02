@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { OPERATIONS_API } from '../config/api'
+import {
+  HISTORY_API,
+  OPERATIONS_API,
+} from '../config/api'
 
 const summary = ref({
   total: 0,
@@ -10,6 +13,8 @@ const summary = ref({
 })
 
 const upcomingOperations = ref([])
+const recentActivity = ref([])
+
 const loading = ref(true)
 const error = ref('')
 
@@ -22,6 +27,68 @@ const completionRate = computed(() => {
     (summary.value.completed / summary.value.total) * 100
   )
 })
+
+function formatEventType(eventType) {
+  const labels = {
+    CREATED: 'Created',
+    UPDATED: 'Updated',
+    STATUS_CHANGED: 'Status Changed',
+    DELETED: 'Deleted',
+  }
+
+  return labels[eventType] || eventType
+}
+
+function formatStatus(status) {
+  if (!status) {
+    return '-'
+  }
+
+  const labels = {
+    PLANNED: 'Planned',
+    IN_PROGRESS: 'In Progress',
+    COMPLETED: 'Completed',
+  }
+
+  return labels[status] || status
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return '-'
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date)
+}
+
+function getEventClass(eventType) {
+  return {
+    CREATED: 'event-created',
+    UPDATED: 'event-updated',
+    STATUS_CHANGED: 'event-status-changed',
+    DELETED: 'event-deleted',
+  }[eventType] || ''
+}
+
+function getStatusChange(activity) {
+  const oldStatus = formatStatus(activity.oldStatus)
+  const newStatus = formatStatus(activity.newStatus)
+
+  return `${oldStatus} → ${newStatus}`
+}
 
 async function loadDashboard() {
   loading.value = true
@@ -46,15 +113,21 @@ async function loadDashboard() {
     params.append('sortBy', 'operationDate')
     params.append('direction', 'asc')
 
-    const [summaryResponse, upcomingResponse] =
-      await Promise.all([
-        fetch(
-          `${OPERATIONS_API}/summary`
-        ),
-        fetch(
-          `${OPERATIONS_API}/search?${params.toString()}`
-        ),
-      ])
+    const [
+      summaryResponse,
+      upcomingResponse,
+      activityResponse,
+    ] = await Promise.all([
+      fetch(
+        `${OPERATIONS_API}/summary`
+      ),
+      fetch(
+        `${OPERATIONS_API}/search?${params.toString()}`
+      ),
+      fetch(
+        `${HISTORY_API}?page=0&size=5`
+      ),
+    ])
 
     if (!summaryResponse.ok) {
       const data = await summaryResponse.json()
@@ -74,14 +147,29 @@ async function loadDashboard() {
       )
     }
 
+    if (!activityResponse.ok) {
+      const data = await activityResponse.json()
+
+      throw new Error(
+        data.error ||
+        'Failed to load recent activity'
+      )
+    }
+
     summary.value =
       await summaryResponse.json()
 
     const upcomingData =
       await upcomingResponse.json()
 
+    const activityData =
+      await activityResponse.json()
+
     upcomingOperations.value =
       upcomingData.content
+
+    recentActivity.value =
+      activityData.content
   } catch (err) {
     error.value = err.message
   } finally {
@@ -202,38 +290,60 @@ onMounted(loadDashboard)
         </div>
 
         <div class="panel">
-          <h2>Status Overview</h2>
+          <div class="panel-header">
+            <div>
+              <h2>Recent Activity</h2>
 
-          <div class="status-list">
-            <div class="status-item">
-              <span>
-                Planned
-              </span>
-
-              <strong>
-                {{ summary.planned }}
-              </strong>
+              <p>
+                Latest audit events.
+              </p>
             </div>
+          </div>
 
-            <div class="status-item">
-              <span>
-                In Progress
-              </span>
+          <div
+            v-if="recentActivity.length"
+            class="activity-list"
+          >
+            <div
+              v-for="activity in recentActivity"
+              :key="activity.id"
+              class="activity-item"
+            >
+              <div class="activity-top">
+                <span
+                  class="event-badge"
+                  :class="getEventClass(activity.eventType)"
+                >
+                  {{ formatEventType(activity.eventType) }}
+                </span>
 
-              <strong>
-                {{ summary.inProgress }}
+                <span class="activity-operation">
+                  #{{ activity.operationId }}
+                </span>
+              </div>
+
+              <strong class="activity-title">
+                {{ activity.operationTitle }}
               </strong>
-            </div>
 
-            <div class="status-item">
-              <span>
-                Completed
+              <div
+                v-if="activity.eventType === 'STATUS_CHANGED'"
+                class="activity-change"
+              >
+                {{ getStatusChange(activity) }}
+              </div>
+
+              <span class="activity-time">
+                {{ formatDateTime(activity.createdAt) }}
               </span>
-
-              <strong>
-                {{ summary.completed }}
-              </strong>
             </div>
+          </div>
+
+          <div
+            v-else
+            class="small-empty-state"
+          >
+            No audit activity recorded.
           </div>
         </div>
       </section>
@@ -268,7 +378,7 @@ onMounted(loadDashboard)
             :key="operation.id"
           >
             <td>
-              {{ operation.id }}
+              #{{ operation.id }}
             </td>
 
             <td>
@@ -285,7 +395,7 @@ onMounted(loadDashboard)
 
             <td>
                 <span class="status-badge">
-                  {{ operation.status }}
+                  {{ formatStatus(operation.status) }}
                 </span>
             </td>
           </tr>
@@ -368,9 +478,10 @@ onMounted(loadDashboard)
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1.4fr 1fr;
   gap: 18px;
   margin-top: 24px;
+  align-items: start;
 }
 
 .panel {
@@ -382,6 +493,7 @@ onMounted(loadDashboard)
 
 .panel h2 {
   margin-top: 0;
+  margin-bottom: 6px;
 }
 
 .panel p {
@@ -392,6 +504,10 @@ onMounted(loadDashboard)
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.panel-header p {
+  margin-top: 0;
 }
 
 .rate {
@@ -422,22 +538,84 @@ onMounted(loadDashboard)
   font-size: 14px;
 }
 
-.status-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 20px;
+.activity-list {
+  margin-top: 14px;
 }
 
-.status-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 12px 0;
+.activity-item {
+  padding: 14px 0;
   border-bottom: 1px solid #eee;
 }
 
-.status-item:last-child {
+.activity-item:first-child {
+  padding-top: 4px;
+}
+
+.activity-item:last-child {
+  padding-bottom: 0;
   border-bottom: none;
+}
+
+.activity-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.activity-operation {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.activity-title {
+  display: block;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+.activity-change {
+  margin-top: 6px;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.activity-time {
+  display: block;
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.event-badge {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.event-created {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.event-updated {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.event-status-changed {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.event-deleted {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .upcoming-panel {
@@ -491,6 +669,12 @@ th {
   color: #1f2937;
 }
 
+.small-empty-state {
+  padding: 24px 0;
+  color: #666;
+  text-align: center;
+}
+
 @media (max-width: 1000px) {
   .summary-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -504,6 +688,15 @@ th {
 @media (max-width: 650px) {
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .panel {
+    overflow-x: auto;
   }
 }
 </style>
