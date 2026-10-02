@@ -1,8 +1,24 @@
 <script setup>
-import { onMounted, ref } from 'vue'
-import { OPERATIONS_API } from '../config/api'
+import { computed, onMounted, ref } from 'vue'
+import {
+  API_BASE_URL,
+  OPERATIONS_API
+} from '../config/api'
 
-const summary = ref({
+const report = ref({
+  totalOperations: 0,
+  planned: 0,
+  inProgress: 0,
+  completed: 0,
+  completionRate: 0,
+  totalAuditEvents: 0,
+  createdEvents: 0,
+  updatedEvents: 0,
+  statusChangedEvents: 0,
+  deletedEvents: 0,
+})
+
+const filteredSummary = ref({
   total: 0,
   planned: 0,
   inProgress: 0,
@@ -11,146 +27,244 @@ const summary = ref({
 
 const recentOperations = ref([])
 
-const startDate = ref('')
-const endDate = ref('')
-
 const loading = ref(true)
 const error = ref('')
 
-const reportFiltered = ref(false)
+const startDate = ref('')
+const endDate = ref('')
+const filtersActive = ref(false)
 
-function percentage(count) {
-  if (summary.value.total === 0) {
+const completionRate = computed(() => {
+  if (filtersActive.value) {
+    if (filteredSummary.value.total === 0) {
+      return 0
+    }
+
+    return Math.round(
+      (
+        filteredSummary.value.completed /
+        filteredSummary.value.total
+      ) * 100
+    )
+  }
+
+  return Math.round(report.value.completionRate)
+})
+
+const displayedSummary = computed(() => {
+  if (filtersActive.value) {
+    return {
+      total: filteredSummary.value.total,
+      planned: filteredSummary.value.planned,
+      inProgress: filteredSummary.value.inProgress,
+      completed: filteredSummary.value.completed,
+    }
+  }
+
+  return {
+    total: report.value.totalOperations,
+    planned: report.value.planned,
+    inProgress: report.value.inProgress,
+    completed: report.value.completed,
+  }
+})
+
+function percentage(value, total) {
+  if (!total) {
     return 0
   }
 
-  return Math.round(
-    (count / summary.value.total) * 100
-  )
+  return Math.round((value / total) * 100)
 }
 
-async function loadReports(useDateFilter = false) {
+async function readError(response, fallback) {
+  try {
+    const data = await response.json()
+
+    return data.error || data.message || fallback
+  } catch {
+    return fallback
+  }
+}
+
+async function loadReport() {
   loading.value = true
   error.value = ''
 
   try {
-    const summaryParams = new URLSearchParams()
     const recentParams = new URLSearchParams()
-
-    if (useDateFilter) {
-      if (!startDate.value || !endDate.value) {
-        throw new Error(
-          'Start Date and End Date are required'
-        )
-      }
-
-      if (startDate.value > endDate.value) {
-        throw new Error(
-          'Start Date must not be after End Date'
-        )
-      }
-
-      summaryParams.append(
-        'startDate',
-        startDate.value
-      )
-
-      summaryParams.append(
-        'endDate',
-        endDate.value
-      )
-
-      recentParams.append(
-        'startDate',
-        startDate.value
-      )
-
-      recentParams.append(
-        'endDate',
-        endDate.value
-      )
-    }
 
     recentParams.append('page', '0')
     recentParams.append('size', '5')
-
-    recentParams.append(
-      'sortBy',
-      'operationDate'
-    )
-
-    recentParams.append(
-      'direction',
-      'desc'
-    )
-
-    const summaryUrl =
-      summaryParams.toString()
-        ? `${OPERATIONS_API}/summary?${summaryParams.toString()}`
-        : `${OPERATIONS_API}/summary`
-
-    const recentUrl =
-      `${OPERATIONS_API}/search?${recentParams.toString()}`
+    recentParams.append('sortBy', 'operationDate')
+    recentParams.append('direction', 'desc')
 
     const [
+      reportResponse,
       summaryResponse,
       recentResponse,
     ] = await Promise.all([
-      fetch(summaryUrl),
-      fetch(recentUrl),
+      fetch(`${API_BASE_URL}/api/reports/summary`),
+      fetch(`${OPERATIONS_API}/summary`),
+      fetch(
+        `${OPERATIONS_API}/search?${recentParams.toString()}`
+      ),
     ])
 
-    if (!summaryResponse.ok) {
-      const data = await summaryResponse.json()
-
+    if (!reportResponse.ok) {
       throw new Error(
-        data.error ||
-        'Failed to load operation summary'
+        await readError(
+          reportResponse,
+          'Failed to load report analytics'
+        )
+      )
+    }
+
+    if (!summaryResponse.ok) {
+      throw new Error(
+        await readError(
+          summaryResponse,
+          'Failed to load operation summary'
+        )
       )
     }
 
     if (!recentResponse.ok) {
-      const data = await recentResponse.json()
-
       throw new Error(
-        data.error ||
-        'Failed to load recent operations'
+        await readError(
+          recentResponse,
+          'Failed to load recent operations'
+        )
       )
     }
 
-    summary.value =
+    report.value = await reportResponse.json()
+    filteredSummary.value =
       await summaryResponse.json()
 
     const recentData =
       await recentResponse.json()
 
     recentOperations.value =
-      recentData.content
+      recentData.content || []
 
-    reportFiltered.value = useDateFilter
+    filtersActive.value = false
   } catch (err) {
-    error.value = err.message
+    error.value =
+      err instanceof Error
+        ? err.message
+        : 'Failed to load reports'
   } finally {
     loading.value = false
   }
 }
 
-function generateReport() {
-  loadReports(true)
+async function applyDateFilter() {
+  if (!startDate.value && !endDate.value) {
+    await loadReport()
+    return
+  }
+
+  if (!startDate.value || !endDate.value) {
+    error.value =
+      'Start date and end date must be provided together'
+    return
+  }
+
+  if (startDate.value > endDate.value) {
+    error.value =
+      'Start date must not be after end date'
+    return
+  }
+
+  loading.value = true
+  error.value = ''
+
+  try {
+    const summaryParams = new URLSearchParams()
+
+    summaryParams.append(
+      'startDate',
+      startDate.value
+    )
+
+    summaryParams.append(
+      'endDate',
+      endDate.value
+    )
+
+    const recentParams =
+      new URLSearchParams(summaryParams)
+
+    recentParams.append('page', '0')
+    recentParams.append('size', '5')
+    recentParams.append(
+      'sortBy',
+      'operationDate'
+    )
+    recentParams.append(
+      'direction',
+      'desc'
+    )
+
+    const [
+      summaryResponse,
+      recentResponse,
+    ] = await Promise.all([
+      fetch(
+        `${OPERATIONS_API}/summary?${summaryParams.toString()}`
+      ),
+      fetch(
+        `${OPERATIONS_API}/search?${recentParams.toString()}`
+      ),
+    ])
+
+    if (!summaryResponse.ok) {
+      throw new Error(
+        await readError(
+          summaryResponse,
+          'Failed to load filtered summary'
+        )
+      )
+    }
+
+    if (!recentResponse.ok) {
+      throw new Error(
+        await readError(
+          recentResponse,
+          'Failed to load filtered operations'
+        )
+      )
+    }
+
+    filteredSummary.value =
+      await summaryResponse.json()
+
+    const recentData =
+      await recentResponse.json()
+
+    recentOperations.value =
+      recentData.content || []
+
+    filtersActive.value = true
+  } catch (err) {
+    error.value =
+      err instanceof Error
+        ? err.message
+        : 'Failed to apply report filter'
+  } finally {
+    loading.value = false
+  }
 }
 
-function clearReport() {
+function clearFilter() {
   startDate.value = ''
   endDate.value = ''
 
-  reportFiltered.value = false
-
-  loadReports(false)
+  loadReport()
 }
 
-onMounted(() => {
-  loadReports(false)
-})
+onMounted(loadReport)
 </script>
 
 <template>
@@ -160,19 +274,20 @@ onMounted(() => {
         <h1>Reports</h1>
 
         <p>
-          Operation summary and status overview.
+          Operation performance and audit analytics.
         </p>
       </div>
 
       <button
         class="refresh-button"
-        @click="loadReports(reportFiltered)"
+        :disabled="loading"
+        @click="loadReport"
       >
         Refresh
       </button>
     </div>
 
-    <section class="report-filter">
+    <section class="filters">
       <div class="filter-field">
         <label>Start Date</label>
 
@@ -192,32 +307,34 @@ onMounted(() => {
       </div>
 
       <button
-        class="generate-button"
-        @click="generateReport"
+        class="apply-button"
+        :disabled="loading"
+        @click="applyDateFilter"
       >
-        Generate Report
+        Apply
       </button>
 
       <button
         class="clear-button"
-        @click="clearReport"
+        :disabled="loading"
+        @click="clearFilter"
       >
         Clear
       </button>
+
+      <span
+        v-if="filtersActive"
+        class="filter-status"
+      >
+        Operation data filtered by date
+      </span>
     </section>
 
     <p
-      v-if="reportFiltered"
-      class="filter-message"
+      v-if="loading"
+      class="state-message"
     >
-      Showing report from
-      <strong>{{ startDate }}</strong>
-      to
-      <strong>{{ endDate }}</strong>
-    </p>
-
-    <p v-if="loading">
-      Loading report...
+      Loading reports...
     </p>
 
     <p
@@ -228,71 +345,73 @@ onMounted(() => {
     </p>
 
     <template v-else>
-      <section class="summary-grid">
-        <div class="summary-card">
-          <span class="card-label">
-            Total Operations
-          </span>
+      <section>
+        <div class="section-heading">
+          <div>
+            <h2>Current Operations</h2>
 
-          <strong class="card-value">
-            {{ summary.total }}
-          </strong>
+            <p>
+              Current operation status overview.
+            </p>
+          </div>
         </div>
 
-        <div class="summary-card">
-          <span class="card-label">
-            Planned
-          </span>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <span class="card-label">
+              Total Operations
+            </span>
 
-          <strong class="card-value">
-            {{ summary.planned }}
-          </strong>
+            <strong class="card-value">
+              {{ displayedSummary.total }}
+            </strong>
+          </div>
 
-          <span class="card-percentage">
-            {{ percentage(summary.planned) }}%
-          </span>
-        </div>
+          <div class="summary-card">
+            <span class="card-label">
+              Planned
+            </span>
 
-        <div class="summary-card">
-          <span class="card-label">
-            In Progress
-          </span>
+            <strong class="card-value">
+              {{ displayedSummary.planned }}
+            </strong>
+          </div>
 
-          <strong class="card-value">
-            {{ summary.inProgress }}
-          </strong>
+          <div class="summary-card">
+            <span class="card-label">
+              In Progress
+            </span>
 
-          <span class="card-percentage">
-            {{ percentage(summary.inProgress) }}%
-          </span>
-        </div>
+            <strong class="card-value">
+              {{ displayedSummary.inProgress }}
+            </strong>
+          </div>
 
-        <div class="summary-card">
-          <span class="card-label">
-            Completed
-          </span>
+          <div class="summary-card">
+            <span class="card-label">
+              Completed
+            </span>
 
-          <strong class="card-value">
-            {{ summary.completed }}
-          </strong>
-
-          <span class="card-percentage">
-            {{ percentage(summary.completed) }}%
-          </span>
+            <strong class="card-value">
+              {{ displayedSummary.completed }}
+            </strong>
+          </div>
         </div>
       </section>
 
-      <section class="report-panel">
-        <h2>Status Distribution</h2>
+      <section class="report-grid">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Completion Rate</h2>
 
-        <div class="status-row">
-          <div class="status-info">
-            <span>Planned</span>
+              <p>
+                Percentage of operations completed.
+              </p>
+            </div>
 
-            <strong>
-              {{ summary.planned }}
-              /
-              {{ summary.total }}
+            <strong class="rate">
+              {{ completionRate }}%
             </strong>
           </div>
 
@@ -300,139 +419,255 @@ onMounted(() => {
             <div
               class="progress-fill"
               :style="{
-                width:
-                  percentage(summary.planned) + '%'
+                width: completionRate + '%'
               }"
             ></div>
           </div>
 
-          <span class="percentage">
-            {{ percentage(summary.planned) }}%
-          </span>
+          <div class="progress-details">
+            <span>
+              {{ displayedSummary.completed }}
+              completed
+            </span>
+
+            <span>
+              {{ displayedSummary.total }}
+              total
+            </span>
+          </div>
         </div>
 
-        <div class="status-row">
-          <div class="status-info">
-            <span>In Progress</span>
+        <div class="panel">
+          <h2>Status Distribution</h2>
 
-            <strong>
-              {{ summary.inProgress }}
-              /
-              {{ summary.total }}
-            </strong>
+          <div class="distribution-list">
+            <div class="distribution-item">
+              <div class="distribution-header">
+                <span>Planned</span>
+
+                <strong>
+                  {{
+                    percentage(
+                      displayedSummary.planned,
+                      displayedSummary.total
+                    )
+                  }}%
+                </strong>
+              </div>
+
+              <div class="small-track">
+                <div
+                  class="small-fill"
+                  :style="{
+                    width:
+                      percentage(
+                        displayedSummary.planned,
+                        displayedSummary.total
+                      ) + '%'
+                  }"
+                ></div>
+              </div>
+            </div>
+
+            <div class="distribution-item">
+              <div class="distribution-header">
+                <span>In Progress</span>
+
+                <strong>
+                  {{
+                    percentage(
+                      displayedSummary.inProgress,
+                      displayedSummary.total
+                    )
+                  }}%
+                </strong>
+              </div>
+
+              <div class="small-track">
+                <div
+                  class="small-fill"
+                  :style="{
+                    width:
+                      percentage(
+                        displayedSummary.inProgress,
+                        displayedSummary.total
+                      ) + '%'
+                  }"
+                ></div>
+              </div>
+            </div>
+
+            <div class="distribution-item">
+              <div class="distribution-header">
+                <span>Completed</span>
+
+                <strong>
+                  {{
+                    percentage(
+                      displayedSummary.completed,
+                      displayedSummary.total
+                    )
+                  }}%
+                </strong>
+              </div>
+
+              <div class="small-track">
+                <div
+                  class="small-fill"
+                  :style="{
+                    width:
+                      percentage(
+                        displayedSummary.completed,
+                        displayedSummary.total
+                      ) + '%'
+                  }"
+                ></div>
+              </div>
+            </div>
           </div>
-
-          <div class="progress-track">
-            <div
-              class="progress-fill"
-              :style="{
-                width:
-                  percentage(summary.inProgress) + '%'
-              }"
-            ></div>
-          </div>
-
-          <span class="percentage">
-            {{ percentage(summary.inProgress) }}%
-          </span>
-        </div>
-
-        <div class="status-row">
-          <div class="status-info">
-            <span>Completed</span>
-
-            <strong>
-              {{ summary.completed }}
-              /
-              {{ summary.total }}
-            </strong>
-          </div>
-
-          <div class="progress-track">
-            <div
-              class="progress-fill"
-              :style="{
-                width:
-                  percentage(summary.completed) + '%'
-              }"
-            ></div>
-          </div>
-
-          <span class="percentage">
-            {{ percentage(summary.completed) }}%
-          </span>
         </div>
       </section>
 
-      <section class="report-panel">
+      <section class="audit-section">
+        <div class="section-heading">
+          <div>
+            <h2>Audit Activity</h2>
+
+            <p>
+              Historical operation activity
+              recorded by the audit system.
+            </p>
+          </div>
+
+          <span class="global-label">
+            All-time activity
+          </span>
+        </div>
+
+        <div class="audit-grid">
+          <div class="audit-card">
+            <span class="card-label">
+              Total Events
+            </span>
+
+            <strong class="audit-value">
+              {{ report.totalAuditEvents }}
+            </strong>
+          </div>
+
+          <div class="audit-card">
+            <span class="card-label">
+              Created
+            </span>
+
+            <strong class="audit-value">
+              {{ report.createdEvents }}
+            </strong>
+          </div>
+
+          <div class="audit-card">
+            <span class="card-label">
+              Updated
+            </span>
+
+            <strong class="audit-value">
+              {{ report.updatedEvents }}
+            </strong>
+          </div>
+
+          <div class="audit-card">
+            <span class="card-label">
+              Status Changes
+            </span>
+
+            <strong class="audit-value">
+              {{ report.statusChangedEvents }}
+            </strong>
+          </div>
+
+          <div class="audit-card">
+            <span class="card-label">
+              Deleted
+            </span>
+
+            <strong class="audit-value">
+              {{ report.deletedEvents }}
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel recent-panel">
         <div class="panel-header">
           <div>
             <h2>Recent Operations</h2>
 
-            <p v-if="reportFiltered">
-              Latest operations within the
-              selected date range.
-            </p>
-
-            <p v-else>
-              Latest 5 operation records.
+            <p>
+              Most recent operation records
+              {{
+                filtersActive
+                  ? 'within the selected date range.'
+                  : 'currently stored.'
+              }}
             </p>
           </div>
         </div>
 
-        <table v-if="recentOperations.length">
-          <thead>
-          <tr>
-            <th>ID</th>
-            <th>Title</th>
-            <th>Date</th>
-            <th>Time</th>
-            <th>Status</th>
-          </tr>
-          </thead>
+        <div class="table-container">
+          <table v-if="recentOperations.length">
+            <thead>
+            <tr>
+              <th>ID</th>
+              <th>Title</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Status</th>
+            </tr>
+            </thead>
 
-          <tbody>
-          <tr
-            v-for="operation in recentOperations"
-            :key="operation.id"
+            <tbody>
+            <tr
+              v-for="operation in recentOperations"
+              :key="operation.id"
+            >
+              <td>
+                #{{ operation.id }}
+              </td>
+
+              <td>
+                {{ operation.title }}
+              </td>
+
+              <td>
+                {{ operation.operationDate }}
+              </td>
+
+              <td>
+                {{ operation.operationTime }}
+              </td>
+
+              <td>
+                  <span class="status-badge">
+                    {{ operation.status }}
+                  </span>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+
+          <div
+            v-else
+            class="empty-state"
           >
-            <td>
-              {{ operation.id }}
-            </td>
+            <strong>
+              No operations found
+            </strong>
 
-            <td>
-              {{ operation.title }}
-            </td>
-
-            <td>
-              {{ operation.operationDate }}
-            </td>
-
-            <td>
-              {{ operation.operationTime }}
-            </td>
-
-            <td>
-                <span class="status-badge">
-                  {{ operation.status }}
-                </span>
-            </td>
-          </tr>
-          </tbody>
-        </table>
-
-        <div
-          v-else
-          class="empty-state"
-        >
-          <strong>
-            No operations found
-          </strong>
-
-          <p>
-            There are no operations for the
-            selected report period.
-          </p>
+            <p>
+              No operation records match
+              the current report criteria.
+            </p>
+          </div>
         </div>
       </section>
     </template>
@@ -444,18 +679,22 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 20px;
 }
 
 .page-header h1 {
   margin-bottom: 8px;
 }
 
-.page-header p {
+.page-header p,
+.section-heading p,
+.panel p {
   margin-top: 0;
   color: #666;
 }
 
-.refresh-button {
+.refresh-button,
+.apply-button {
   padding: 10px 18px;
   border: none;
   border-radius: 5px;
@@ -464,15 +703,23 @@ onMounted(() => {
   cursor: pointer;
 }
 
-.refresh-button:hover {
+.refresh-button:hover:not(:disabled),
+.apply-button:hover:not(:disabled) {
   background: #374151;
 }
 
-.report-filter {
+.refresh-button:disabled,
+.apply-button:disabled,
+.clear-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.filters {
   display: flex;
   align-items: end;
   gap: 12px;
-  margin-top: 24px;
+  margin: 24px 0;
   padding: 18px;
   background: white;
   border: 1px solid #ddd;
@@ -494,47 +741,52 @@ onMounted(() => {
   padding: 9px 10px;
   border: 1px solid #ccc;
   border-radius: 5px;
-}
-
-.generate-button,
-.clear-button {
-  padding: 10px 16px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.generate-button {
-  border: none;
-  background: #1f2937;
-  color: white;
-}
-
-.generate-button:hover {
-  background: #374151;
-}
-
-.clear-button {
-  border: 1px solid #ccc;
   background: white;
 }
 
-.clear-button:hover {
-  background: #f3f4f6;
+.clear-button {
+  padding: 9px 16px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background: white;
+  cursor: pointer;
 }
 
-.filter-message {
-  margin-top: 14px;
-  color: #555;
+.filter-status,
+.global-label {
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.filter-status {
+  margin-left: auto;
+  align-self: center;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.section-heading h2 {
+  margin-bottom: 6px;
 }
 
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 18px;
-  margin-top: 28px;
+  margin-top: 16px;
 }
 
-.summary-card {
+.summary-card,
+.audit-card {
   display: flex;
   flex-direction: column;
   padding: 22px;
@@ -554,69 +806,109 @@ onMounted(() => {
   color: #1f2937;
 }
 
-.card-percentage {
-  margin-top: 6px;
-  color: #666;
-  font-size: 14px;
+.report-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 24px;
 }
 
-.report-panel {
-  margin-top: 24px;
+.panel {
   padding: 22px;
   background: white;
   border: 1px solid #ddd;
   border-radius: 8px;
 }
 
-.report-panel h2 {
+.panel h2 {
   margin-top: 0;
 }
 
-.status-row {
-  display: grid;
-  grid-template-columns: 170px 1fr 60px;
-  align-items: center;
-  gap: 18px;
-  margin-top: 22px;
-}
-
-.status-info {
+.panel-header {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
 }
 
-.status-info span {
-  color: #555;
+.rate {
+  font-size: 30px;
+  color: #1f2937;
 }
 
-.progress-track {
-  height: 12px;
+.progress-track,
+.small-track {
   overflow: hidden;
   background: #e5e7eb;
   border-radius: 20px;
 }
 
-.progress-fill {
+.progress-track {
+  height: 14px;
+  margin-top: 24px;
+}
+
+.progress-fill,
+.small-fill {
   height: 100%;
   background: #374151;
   border-radius: 20px;
   transition: width 0.3s ease;
 }
 
-.percentage {
-  text-align: right;
-  font-weight: 600;
+.progress-details {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  color: #666;
+  font-size: 14px;
 }
 
-.panel-header p {
-  margin-top: -8px;
-  color: #666;
+.distribution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.distribution-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.small-track {
+  height: 9px;
+}
+
+.audit-section {
+  margin-top: 30px;
+}
+
+.audit-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.audit-value {
+  margin-top: 10px;
+  font-size: 28px;
+  color: #1f2937;
+}
+
+.recent-panel {
+  margin-top: 30px;
+}
+
+.table-container {
+  margin-top: 18px;
+  overflow-x: auto;
 }
 
 table {
   width: 100%;
-  margin-top: 20px;
   border-collapse: collapse;
 }
 
@@ -634,14 +926,34 @@ th {
 .status-badge {
   display: inline-block;
   padding: 5px 9px;
-  background: #f3f4f6;
   border-radius: 12px;
+  background: #f3f4f6;
   font-size: 12px;
   font-weight: 600;
 }
 
+.empty-state {
+  padding: 36px;
+  text-align: center;
+  color: #666;
+}
+
+.empty-state strong {
+  display: block;
+  margin-bottom: 7px;
+  color: #1f2937;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.state-message {
+  margin-top: 24px;
+}
+
 .error-message {
-  margin-top: 18px;
+  margin-top: 24px;
   padding: 12px;
   border: 1px solid #fecaca;
   border-radius: 5px;
@@ -649,39 +961,48 @@ th {
   color: #b91c1c;
 }
 
-.empty-state {
-  padding: 32px;
-  text-align: center;
-  color: #666;
+@media (max-width: 1100px) {
+  .audit-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
-.empty-state strong {
-  display: block;
-  margin-bottom: 6px;
-  color: #1f2937;
-}
-
-@media (max-width: 1000px) {
+@media (max-width: 900px) {
   .summary-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .report-filter {
+  .report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filters {
     flex-wrap: wrap;
+  }
+
+  .filter-status {
+    margin-left: 0;
   }
 }
 
 @media (max-width: 650px) {
-  .summary-grid {
+  .page-header,
+  .section-heading {
+    align-items: flex-start;
+  }
+
+  .summary-grid,
+  .audit-grid {
     grid-template-columns: 1fr;
   }
 
-  .status-row {
-    grid-template-columns: 1fr;
+  .filters {
+    align-items: stretch;
+    flex-direction: column;
   }
 
-  .percentage {
-    text-align: left;
+  .filter-field input {
+    width: auto;
   }
 }
 </style>
