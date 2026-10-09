@@ -1,13 +1,17 @@
 package com.opsflow.backend.service;
 
 import com.opsflow.backend.dto.OperationSummary;
+import com.opsflow.backend.entity.AppUser;
 import com.opsflow.backend.entity.OperationHistory;
 import com.opsflow.backend.entity.OperationRecord;
+import com.opsflow.backend.repository.AppUserRepository;
 import com.opsflow.backend.repository.OperationHistoryRepository;
 import com.opsflow.backend.repository.OperationRecordRepository;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,20 +20,23 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 
+import com.opsflow.backend.exception.ResourceNotFoundException;
 @Service
 public class OperationRecordService {
 
     private final OperationRecordRepository repository;
     private final OperationHistoryRepository historyRepository;
+    private final AppUserRepository userRepository;
 
     public OperationRecordService(
             OperationRecordRepository repository,
-            OperationHistoryRepository historyRepository) {
+            OperationHistoryRepository historyRepository,
+            AppUserRepository userRepository) {
 
         this.repository = repository;
         this.historyRepository = historyRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional
@@ -57,87 +64,100 @@ public class OperationRecordService {
         return repository.findAll(pageable);
     }
 
-    public Optional<OperationRecord> getById(Long id) {
-        return repository.findById(id);
+    public OperationRecord getById(Long id) {
+
+        return repository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Operation not found with id: " + id
+                        )
+                );
     }
 
     @Transactional
-    public Optional<OperationRecord> update(
+    public OperationRecord update(
             Long id,
             OperationRecord updatedRecord) {
 
-        return repository.findById(id)
-                .map(existingRecord -> {
+        OperationRecord existingRecord =
+                repository.findById(id)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Operation not found with id: " + id
+                                )
+                        );
 
-                    String oldStatus =
-                            existingRecord.getStatus();
+        String oldStatus =
+                existingRecord.getStatus();
 
-                    existingRecord.setTitle(
-                            updatedRecord.getTitle()
-                    );
+        existingRecord.setTitle(
+                updatedRecord.getTitle()
+        );
 
-                    existingRecord.setDescription(
-                            updatedRecord.getDescription()
-                    );
+        existingRecord.setDescription(
+                updatedRecord.getDescription()
+        );
 
-                    existingRecord.setOperationDate(
-                            updatedRecord.getOperationDate()
-                    );
+        existingRecord.setOperationDate(
+                updatedRecord.getOperationDate()
+        );
 
-                    existingRecord.setOperationTime(
-                            updatedRecord.getOperationTime()
-                    );
+        existingRecord.setOperationTime(
+                updatedRecord.getOperationTime()
+        );
 
-                    existingRecord.setStatus(
-                            updatedRecord.getStatus()
-                    );
+        existingRecord.setStatus(
+                updatedRecord.getStatus()
+        );
 
-                    OperationRecord savedRecord =
-                            repository.save(existingRecord);
+        OperationRecord savedRecord =
+                repository.save(existingRecord);
 
-                    String eventType;
+        String eventType;
 
-                    if (!Objects.equals(
-                            oldStatus,
-                            savedRecord.getStatus())) {
+        if (!Objects.equals(
+                oldStatus,
+                savedRecord.getStatus())) {
 
-                        eventType = "STATUS_CHANGED";
+            eventType = "STATUS_CHANGED";
 
-                    } else {
+        } else {
 
-                        eventType = "UPDATED";
-                    }
+            eventType = "UPDATED";
+        }
 
-                    saveHistory(
-                            savedRecord.getId(),
-                            eventType,
-                            oldStatus,
-                            savedRecord.getStatus(),
-                            savedRecord.getTitle()
-                    );
+        saveHistory(
+                savedRecord.getId(),
+                eventType,
+                oldStatus,
+                savedRecord.getStatus(),
+                savedRecord.getTitle()
+        );
 
-                    return savedRecord;
-                });
+        return savedRecord;
     }
 
     @Transactional
     public void delete(Long id) {
 
-        repository.findById(id)
-                .ifPresent(record -> {
+        OperationRecord record =
+                repository.findById(id)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Operation not found with id: " + id
+                                )
+                        );
 
-                    saveHistory(
-                            record.getId(),
-                            "DELETED",
-                            record.getStatus(),
-                            null,
-                            record.getTitle()
-                    );
+        saveHistory(
+                record.getId(),
+                "DELETED",
+                record.getStatus(),
+                null,
+                record.getTitle()
+        );
 
-                    repository.delete(record);
-                });
+        repository.delete(record);
     }
-
     private void saveHistory(
             Long operationId,
             String eventType,
@@ -145,6 +165,8 @@ public class OperationRecordService {
             String newStatus,
             String operationTitle) {
 
+        AppUser currentUser =
+                getCurrentUser();
         OperationHistory history =
                 new OperationHistory(
                         operationId,
@@ -152,10 +174,41 @@ public class OperationRecordService {
                         oldStatus,
                         newStatus,
                         operationTitle,
+                        currentUser.getId(),
+                        currentUser.getEmail(),
+                        currentUser.getRole().name(),
+                        currentUser.getName(),
                         LocalDateTime.now()
                 );
 
         historyRepository.save(history);
+    }
+
+    private AppUser getCurrentUser() {
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (authentication == null
+                || !authentication.isAuthenticated()) {
+
+            throw new IllegalStateException(
+                    "Authenticated user is not available"
+            );
+        }
+
+        String email =
+                authentication.getName();
+
+        return userRepository
+                .findByEmail(email)
+                .orElseThrow(() ->
+                        new IllegalStateException(
+                                "Authenticated user was not found"
+                        )
+                );
     }
 
     public Page<OperationRecord> search(

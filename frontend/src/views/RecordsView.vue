@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { OPERATIONS_API } from '../config/api'
+import { apiFetch, ApiError } from '../services/api'
 
 const records = ref([])
 const loading = ref(true)
@@ -20,51 +21,60 @@ function applyPageData(data) {
   totalElements.value = data.totalElements ?? 0
 }
 
+function getErrorMessage(
+  err,
+  fallbackMessage
+) {
+  if (err instanceof ApiError) {
+    return err.message || fallbackMessage
+  }
+
+  return err?.message || fallbackMessage
+}
+
 async function loadRecords(page = 0) {
   loading.value = true
   error.value = ''
 
   try {
-    const params = new URLSearchParams()
+    const params =
+      new URLSearchParams()
 
-    params.append('page', page)
-    params.append('size', pageSize.value)
-
-    const response = await fetch(
-      `${OPERATIONS_API}/history?${params.toString()}`
+    params.append(
+      'page',
+      page
     )
 
-    if (!response.ok) {
-      let message = 'Failed to load operation history'
+    params.append(
+      'size',
+      pageSize.value
+    )
 
-      try {
-        const data = await response.json()
+    const response =
+      await apiFetch(
+        `${OPERATIONS_API}/history?${params.toString()}`
+      )
 
-        if (data.error) {
-          message = data.error
-        }
-      } catch {
-        // Keep the default message.
-      }
-
-      throw new Error(message)
-    }
-
-    const data = await response.json()
+    const data =
+      await response.json()
 
     applyPageData(data)
   } catch (err) {
     error.value =
-      err instanceof Error
-        ? err.message
-        : 'Failed to load operation history'
+      getErrorMessage(
+        err,
+        'Failed to load operation history'
+      )
   } finally {
     loading.value = false
   }
 }
 
 function changePage(page) {
-  if (page < 0 || page >= totalPages.value) {
+  if (
+    page < 0 ||
+    page >= totalPages.value
+  ) {
     return
   }
 
@@ -72,7 +82,9 @@ function changePage(page) {
 }
 
 function refreshRecords() {
-  loadRecords(currentPage.value)
+  loadRecords(
+    currentPage.value
+  )
 }
 
 function formatEventType(eventType) {
@@ -80,15 +92,30 @@ function formatEventType(eventType) {
     return '-'
   }
 
-  return eventType
-    .toLowerCase()
-    .split('_')
-    .map(
-      word =>
-        word.charAt(0).toUpperCase() +
-        word.slice(1)
-    )
-    .join(' ')
+  switch (eventType) {
+    case 'CREATED':
+      return 'Create'
+
+    case 'UPDATED':
+      return 'Update'
+
+    case 'STATUS_CHANGED':
+      return 'Status Change'
+
+    case 'DELETED':
+      return 'Delete'
+
+    default:
+      return eventType
+        .toLowerCase()
+        .split('_')
+        .map(
+          word =>
+            word.charAt(0).toUpperCase() +
+            word.slice(1)
+        )
+        .join(' ')
+  }
 }
 
 function formatStatus(status) {
@@ -133,16 +160,24 @@ function formatDateTime(value) {
 
 function getStatusChange(record) {
   const oldStatus =
-    formatStatus(record.oldStatus)
+    formatStatus(
+      record.oldStatus
+    )
 
   const newStatus =
-    formatStatus(record.newStatus)
+    formatStatus(
+      record.newStatus
+    )
 
-  if (record.eventType === 'CREATED') {
+  if (
+    record.eventType === 'CREATED'
+  ) {
     return `- → ${newStatus}`
   }
 
-  if (record.eventType === 'DELETED') {
+  if (
+    record.eventType === 'DELETED'
+  ) {
     return `${oldStatus} → -`
   }
 
@@ -166,6 +201,39 @@ function eventClass(eventType) {
     default:
       return ''
   }
+}
+
+function roleClass(role) {
+  switch (role) {
+    case 'ADMIN':
+      return 'role-admin'
+
+    case 'USER':
+      return 'role-user'
+
+    default:
+      return 'role-unknown'
+  }
+}
+
+function displayValue(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return '-'
+  }
+
+  return value
+}
+
+function openRecord(record) {
+  selectedRecord.value = record
+}
+
+function closeRecord() {
+  selectedRecord.value = null
 }
 
 onMounted(() => {
@@ -210,36 +278,60 @@ onMounted(() => {
         </span>
 
         <strong>
-          {{ totalPages ? currentPage + 1 : 0 }}
+          {{
+            totalPages
+              ? currentPage + 1
+              : 0
+          }}
           / {{ totalPages }}
         </strong>
       </div>
     </section>
 
-    <p
+    <div
       v-if="loading"
       class="state-message"
     >
       Loading operation history...
-    </p>
+    </div>
 
-    <p
+    <div
       v-else-if="error"
-      class="error-message"
+      class="error-state"
     >
-      {{ error }}
-    </p>
+      <strong>
+        Unable to load audit records
+      </strong>
+
+      <p>
+        {{ error }}
+      </p>
+
+      <button
+        class="retry-button"
+        @click="
+          loadRecords(currentPage)
+        "
+      >
+        Try Again
+      </button>
+    </div>
 
     <template v-else>
       <div class="table-container">
-        <table v-if="records.length">
+        <table
+          v-if="records.length"
+        >
           <thead>
           <tr>
-            <th>Time</th>
-            <th>Operation</th>
-            <th>Title</th>
-            <th>Event</th>
-            <th>Status Change</th>
+            <th>Action</th>
+            <th>Operation ID</th>
+            <th>Operation Title</th>
+            <th>Performed By</th>
+            <th>User ID</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Timestamp</th>
           </tr>
           </thead>
 
@@ -248,33 +340,93 @@ onMounted(() => {
             v-for="record in records"
             :key="record.id"
             class="record-row"
-            @click="selectedRecord = record"
+            @click="
+                openRecord(record)
+              "
           >
-            <td class="date-cell">
-              {{ formatDateTime(record.createdAt) }}
+            <td>
+                <span
+                  class="event-badge"
+                  :class="
+                    eventClass(
+                      record.eventType
+                    )
+                  "
+                >
+                  {{
+                    formatEventType(
+                      record.eventType
+                    )
+                  }}
+                </span>
             </td>
 
-            <td>
+            <td class="id-cell">
               #{{ record.operationId }}
             </td>
 
-            <td>
-              {{ record.operationTitle || '-' }}
+            <td class="title-cell">
+              {{
+                record.operationTitle ||
+                '-'
+              }}
+            </td>
+
+            <td class="user-name-cell">
+              {{
+                displayValue(
+                  record.userName
+                )
+              }}
+            </td>
+
+            <td class="id-cell">
+              <template
+                v-if="
+                    record.userId !== null &&
+                    record.userId !== undefined
+                  "
+              >
+                #{{ record.userId }}
+              </template>
+
+              <template v-else>
+                -
+              </template>
+            </td>
+
+            <td class="email-cell">
+              {{
+                displayValue(
+                  record.userEmail
+                )
+              }}
             </td>
 
             <td>
                 <span
-                  class="event-badge"
-                  :class="eventClass(record.eventType)"
+                  v-if="record.userRole"
+                  class="role-badge"
+                  :class="
+                    roleClass(
+                      record.userRole
+                    )
+                  "
                 >
-                  {{ formatEventType(record.eventType) }}
+                  {{ record.userRole }}
+                </span>
+
+              <span v-else>
+                  -
                 </span>
             </td>
 
-            <td>
-                <span class="status-change">
-                  {{ getStatusChange(record) }}
-                </span>
+            <td class="date-cell">
+              {{
+                formatDateTime(
+                  record.createdAt
+                )
+              }}
             </td>
           </tr>
           </tbody>
@@ -298,28 +450,45 @@ onMounted(() => {
 
       <div class="pagination">
         <div class="record-count">
-          {{ totalElements }} audit records
+          {{ totalElements }}
+          audit records
         </div>
 
         <div class="page-controls">
           <button
-            :disabled="currentPage === 0"
-            @click="changePage(currentPage - 1)"
+            :disabled="
+              currentPage === 0
+            "
+            @click="
+              changePage(
+                currentPage - 1
+              )
+            "
           >
             Previous
           </button>
 
           <span>
-            Page {{ totalPages ? currentPage + 1 : 0 }}
+            Page
+            {{
+              totalPages
+                ? currentPage + 1
+                : 0
+            }}
             of {{ totalPages }}
           </span>
 
           <button
             :disabled="
               totalPages === 0 ||
-              currentPage >= totalPages - 1
+              currentPage >=
+                totalPages - 1
             "
-            @click="changePage(currentPage + 1)"
+            @click="
+              changePage(
+                currentPage + 1
+              )
+            "
           >
             Next
           </button>
@@ -330,7 +499,7 @@ onMounted(() => {
     <div
       v-if="selectedRecord"
       class="modal-overlay"
-      @click.self="selectedRecord = null"
+      @click.self="closeRecord"
     >
       <div class="modal">
         <div class="modal-header">
@@ -338,102 +507,217 @@ onMounted(() => {
             <h2>Audit Record</h2>
 
             <p>
-              History entry #{{ selectedRecord.id }}
+              History entry
+              #{{ selectedRecord.id }}
             </p>
           </div>
 
           <button
             class="close-button"
-            @click="selectedRecord = null"
+            @click="closeRecord"
           >
             ×
           </button>
         </div>
 
-        <div class="detail-row">
-          <strong>History ID</strong>
+        <section class="detail-section">
+          <h3>Activity</h3>
 
-          <span>
-            #{{ selectedRecord.id }}
-          </span>
-        </div>
+          <div class="detail-row">
+            <strong>
+              History ID
+            </strong>
 
-        <div class="detail-row">
-          <strong>Operation ID</strong>
+            <span>
+              #{{ selectedRecord.id }}
+            </span>
+          </div>
 
-          <span>
-            #{{ selectedRecord.operationId }}
-          </span>
-        </div>
+          <div class="detail-row">
+            <strong>Action</strong>
 
-        <div class="detail-row">
-          <strong>Title</strong>
+            <span>
+              <span
+                class="event-badge"
+                :class="
+                  eventClass(
+                    selectedRecord.eventType
+                  )
+                "
+              >
+                {{
+                  formatEventType(
+                    selectedRecord.eventType
+                  )
+                }}
+              </span>
+            </span>
+          </div>
 
-          <span>
-            {{ selectedRecord.operationTitle || '-' }}
-          </span>
-        </div>
+          <div class="detail-row">
+            <strong>
+              Operation ID
+            </strong>
 
-        <div class="detail-row">
-          <strong>Event</strong>
+            <span>
+              #{{
+                selectedRecord.operationId
+              }}
+            </span>
+          </div>
 
-          <span
-            class="event-badge"
-            :class="
-              eventClass(selectedRecord.eventType)
-            "
-          >
-            {{
-              formatEventType(
-                selectedRecord.eventType
-              )
-            }}
-          </span>
-        </div>
+          <div class="detail-row">
+            <strong>
+              Operation Title
+            </strong>
 
-        <div class="detail-row">
-          <strong>Old Status</strong>
+            <span>
+              {{
+                selectedRecord.operationTitle ||
+                '-'
+              }}
+            </span>
+          </div>
+        </section>
 
-          <span>
-            {{
-              formatStatus(
-                selectedRecord.oldStatus
-              )
-            }}
-          </span>
-        </div>
+        <section class="detail-section">
+          <h3>Performed By</h3>
 
-        <div class="detail-row">
-          <strong>New Status</strong>
+          <div class="detail-row">
+            <strong>Name</strong>
 
-          <span>
-            {{
-              formatStatus(
-                selectedRecord.newStatus
-              )
-            }}
-          </span>
-        </div>
+            <span>
+              {{
+                displayValue(
+                  selectedRecord.userName
+                )
+              }}
+            </span>
+          </div>
 
-        <div class="detail-row">
-          <strong>Status Change</strong>
+          <div class="detail-row">
+            <strong>User ID</strong>
 
-          <span>
-            {{ getStatusChange(selectedRecord) }}
-          </span>
-        </div>
+            <span>
+              <template
+                v-if="
+                  selectedRecord.userId !== null &&
+                  selectedRecord.userId !== undefined
+                "
+              >
+                #{{
+                  selectedRecord.userId
+                }}
+              </template>
 
-        <div class="detail-row">
-          <strong>Recorded At</strong>
+              <template v-else>
+                -
+              </template>
+            </span>
+          </div>
 
-          <span>
-            {{
-              formatDateTime(
-                selectedRecord.createdAt
-              )
-            }}
-          </span>
-        </div>
+          <div class="detail-row">
+            <strong>Email</strong>
+
+            <span>
+              {{
+                displayValue(
+                  selectedRecord.userEmail
+                )
+              }}
+            </span>
+          </div>
+
+          <div class="detail-row">
+            <strong>Role</strong>
+
+            <span>
+              <span
+                v-if="
+                  selectedRecord.userRole
+                "
+                class="role-badge"
+                :class="
+                  roleClass(
+                    selectedRecord.userRole
+                  )
+                "
+              >
+                {{
+                  selectedRecord.userRole
+                }}
+              </span>
+
+              <span v-else>
+                -
+              </span>
+            </span>
+          </div>
+        </section>
+
+        <section class="detail-section">
+          <h3>Status</h3>
+
+          <div class="detail-row">
+            <strong>
+              Old Status
+            </strong>
+
+            <span>
+              {{
+                formatStatus(
+                  selectedRecord.oldStatus
+                )
+              }}
+            </span>
+          </div>
+
+          <div class="detail-row">
+            <strong>
+              New Status
+            </strong>
+
+            <span>
+              {{
+                formatStatus(
+                  selectedRecord.newStatus
+                )
+              }}
+            </span>
+          </div>
+
+          <div class="detail-row">
+            <strong>
+              Status Change
+            </strong>
+
+            <span class="status-change">
+              {{
+                getStatusChange(
+                  selectedRecord
+                )
+              }}
+            </span>
+          </div>
+        </section>
+
+        <section class="detail-section">
+          <h3>Timestamp</h3>
+
+          <div class="detail-row">
+            <strong>
+              Recorded At
+            </strong>
+
+            <span>
+              {{
+                formatDateTime(
+                  selectedRecord.createdAt
+                )
+              }}
+            </span>
+          </div>
+        </section>
       </div>
     </div>
   </main>
@@ -510,6 +794,7 @@ onMounted(() => {
 
 table {
   width: 100%;
+  min-width: 1150px;
   border-collapse: collapse;
 }
 
@@ -525,6 +810,7 @@ th {
   background: #e9edf2;
   color: #374151;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 tbody tr:last-child td {
@@ -541,6 +827,24 @@ tbody tr:last-child td {
 
 .date-cell {
   white-space: nowrap;
+}
+
+.id-cell {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.title-cell {
+  min-width: 170px;
+}
+
+.user-name-cell {
+  min-width: 130px;
+  font-weight: 600;
+}
+
+.email-cell {
+  min-width: 180px;
 }
 
 .event-badge {
@@ -572,6 +876,30 @@ tbody tr:last-child td {
   color: #b91c1c;
 }
 
+.role-badge {
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.role-admin {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+.role-user {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.role-unknown {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
 .status-change {
   font-weight: 600;
   color: #374151;
@@ -580,15 +908,41 @@ tbody tr:last-child td {
 
 .state-message {
   margin-top: 24px;
+  padding: 20px;
+  text-align: center;
+  color: #4b5563;
 }
 
-.error-message {
+.error-state {
   margin-top: 24px;
-  padding: 12px;
+  padding: 24px;
   border: 1px solid #fecaca;
-  border-radius: 5px;
-  background: #fef2f2;
+  border-radius: 8px;
+  background: white;
+  text-align: center;
+}
+
+.error-state strong {
   color: #b91c1c;
+}
+
+.error-state p {
+  margin: 8px 0 0;
+  color: #6b7280;
+}
+
+.retry-button {
+  margin-top: 16px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 5px;
+  background: #1f2937;
+  color: white;
+  cursor: pointer;
+}
+
+.retry-button:hover {
+  background: #374151;
 }
 
 .no-records {
@@ -653,21 +1007,23 @@ tbody tr:last-child td {
 }
 
 .modal {
-  width: 540px;
+  width: 620px;
   max-width: 100%;
   max-height: 90vh;
   overflow-y: auto;
   padding: 24px;
   background: white;
   border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 10px 30px
+    rgba(0, 0, 0, 0.2);
 }
 
 .modal-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .modal-header h2 {
@@ -687,9 +1043,25 @@ tbody tr:last-child td {
   cursor: pointer;
 }
 
+.detail-section {
+  margin-top: 22px;
+}
+
+.detail-section:first-of-type {
+  margin-top: 0;
+}
+
+.detail-section h3 {
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e5e7eb;
+  color: #1f2937;
+  font-size: 15px;
+}
+
 .detail-row {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: 150px 1fr;
   gap: 16px;
   padding: 12px 0;
   border-bottom: 1px solid #eee;
@@ -697,6 +1069,20 @@ tbody tr:last-child td {
 
 .detail-row:last-child {
   border-bottom: none;
+}
+
+.detail-row strong {
+  color: #374151;
+}
+
+.detail-row span {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .table-container {
+    overflow-x: auto;
+  }
 }
 
 @media (max-width: 700px) {

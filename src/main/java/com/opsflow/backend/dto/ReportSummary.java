@@ -14,6 +14,11 @@ public class ReportSummary {
     private final long statusChangedEvents;
     private final long deletedEvents;
 
+    private final long trackedUserActions;
+    private final long userActions;
+    private final long adminActions;
+    private final long unattributedActions;
+
     public ReportSummary(
             long totalOperations,
             long planned,
@@ -24,18 +29,28 @@ public class ReportSummary {
             long createdEvents,
             long updatedEvents,
             long statusChangedEvents,
-            long deletedEvents) {
+            long deletedEvents,
+            long trackedUserActions,
+            long userActions,
+            long adminActions,
+            long unattributedActions) {
 
         this.totalOperations = totalOperations;
         this.planned = planned;
         this.inProgress = inProgress;
         this.completed = completed;
         this.completionRate = completionRate;
+
         this.totalAuditEvents = totalAuditEvents;
         this.createdEvents = createdEvents;
         this.updatedEvents = updatedEvents;
         this.statusChangedEvents = statusChangedEvents;
         this.deletedEvents = deletedEvents;
+
+        this.trackedUserActions = trackedUserActions;
+        this.userActions = userActions;
+        this.adminActions = adminActions;
+        this.unattributedActions = unattributedActions;
     }
 
     public long getTotalOperations() {
@@ -76,5 +91,21 @@ public class ReportSummary {
 
     public long getDeletedEvents() {
         return deletedEvents;
+    }
+
+    public long getTrackedUserActions() {
+        return trackedUserActions;
+    }
+
+    public long getUserActions() {
+        return userActions;
+    }
+
+    public long getAdminActions() {
+        return adminActions;
+    }
+
+    public long getUnattributedActions() {
+        return unattributedActions;
     }
 }

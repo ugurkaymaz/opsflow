@@ -1,10 +1,22 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { OPERATIONS_API } from '../config/api'
+import { apiFetch, ApiError } from '../services/api'
+import { getCurrentUser } from '../services/auth'
+
+const currentUser = getCurrentUser()
+
+const isAdmin = computed(
+  () => currentUser?.role === 'ADMIN'
+)
 
 const operations = ref([])
 const loading = ref(true)
-const error = ref('')
+
+const pageError = ref('')
+const createError = ref('')
+const editError = ref('')
+const deleteError = ref('')
 
 const currentPage = ref(0)
 const pageSize = ref(10)
@@ -49,61 +61,121 @@ function applyPageData(data) {
   totalElements.value = data.totalElements
 }
 
-async function getOperations(page = 0, useFilters = false) {
+function getErrorMessage(
+  err,
+  fallbackMessage
+) {
+  if (err instanceof ApiError) {
+    if (err.validationErrors) {
+      const messages =
+        Object.values(
+          err.validationErrors
+        )
+
+      if (messages.length > 0) {
+        return messages.join(', ')
+      }
+    }
+
+    return err.message || fallbackMessage
+  }
+
+  return err?.message || fallbackMessage
+}
+
+async function getOperations(
+  page = 0,
+  useFilters = false
+) {
   loading.value = true
-  error.value = ''
+  pageError.value = ''
 
   try {
-    const params = new URLSearchParams()
+    const params =
+      new URLSearchParams()
 
     if (useFilters) {
       if (startDate.value) {
-        params.append('startDate', startDate.value)
+        params.append(
+          'startDate',
+          startDate.value
+        )
       }
 
       if (endDate.value) {
-        params.append('endDate', endDate.value)
+        params.append(
+          'endDate',
+          endDate.value
+        )
       }
 
       if (startTime.value) {
-        params.append('startTime', startTime.value)
+        params.append(
+          'startTime',
+          startTime.value
+        )
       }
 
       if (endTime.value) {
-        params.append('endTime', endTime.value)
+        params.append(
+          'endTime',
+          endTime.value
+        )
       }
 
       if (status.value) {
-        params.append('status', status.value)
+        params.append(
+          'status',
+          status.value
+        )
       }
     }
 
-    params.append('page', page)
-    params.append('size', pageSize.value)
-    params.append('sortBy', sortBy.value)
-    params.append('direction', sortDirection.value)
-
-    const response = await fetch(
-      `${OPERATIONS_API}/search?${params.toString()}`
+    params.append(
+      'page',
+      page
     )
 
-    if (!response.ok) {
-      const data = await response.json()
+    params.append(
+      'size',
+      pageSize.value
+    )
 
-      throw new Error(
-        data.error ||
-        'Failed to load operations'
+    params.append(
+      'sortBy',
+      sortBy.value
+    )
+
+    params.append(
+      'direction',
+      sortDirection.value
+    )
+
+    const response =
+      await apiFetch(
+        `${OPERATIONS_API}/search?${params.toString()}`
       )
-    }
 
-    const data = await response.json()
+    const data =
+      await response.json()
 
     applyPageData(data)
   } catch (err) {
-    error.value = err.message
+    pageError.value =
+      getErrorMessage(
+        err,
+        'Failed to load operations'
+      )
   } finally {
     loading.value = false
   }
+}
+
+function toggleCreateForm() {
+  showCreateForm.value =
+    !showCreateForm.value
+
+  createError.value = ''
 }
 
 function clearFilters() {
@@ -118,14 +190,49 @@ function clearFilters() {
 
   filtersActive.value = false
 
-  getOperations(0, false)
+  getOperations(
+    0,
+    false
+  )
+}
+
+function searchOperations() {
+  filtersActive.value = true
+
+  getOperations(
+    0,
+    true
+  )
 }
 
 function changePage(page) {
+  if (
+    page < 0 ||
+    page >= totalPages.value
+  ) {
+    return
+  }
+
   getOperations(
     page,
     filtersActive.value
   )
+}
+
+function openOperation(operation) {
+  selectedOperation.value =
+    operation
+
+  editMode.value = false
+  editError.value = ''
+  deleteError.value = ''
+}
+
+function closeOperation() {
+  selectedOperation.value = null
+  editMode.value = false
+  editError.value = ''
+  deleteError.value = ''
 }
 
 function startEdit() {
@@ -134,50 +241,51 @@ function startEdit() {
     selectedOperation.value.title,
 
     description:
-      selectedOperation.value.description || '',
+      selectedOperation.value
+        .description || '',
 
     operationDate:
-    selectedOperation.value.operationDate,
+    selectedOperation.value
+      .operationDate,
 
     operationTime:
-    selectedOperation.value.operationTime,
+    selectedOperation.value
+      .operationTime,
 
     status:
     selectedOperation.value.status,
   }
 
   editMode.value = true
+  editError.value = ''
+  deleteError.value = ''
+}
+
+function cancelEdit() {
+  editMode.value = false
+  editError.value = ''
 }
 
 async function updateOperation() {
-  error.value = ''
+  editError.value = ''
 
   try {
-    const response = await fetch(
-      `${OPERATIONS_API}/${selectedOperation.value.id}`,
-      {
-        method: 'PUT',
+    const response =
+      await apiFetch(
+        `${OPERATIONS_API}/${selectedOperation.value.id}`,
+        {
+          method: 'PUT',
 
-        headers: {
-          'Content-Type': 'application/json',
-        },
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
 
-        body: JSON.stringify(
-          editOperation.value
-        ),
-      }
-    )
-
-    if (!response.ok) {
-      const data = await response.json()
-
-      const message =
-        data.error ||
-        Object.values(data).join(', ') ||
-        'Failed to update operation'
-
-      throw new Error(message)
-    }
+          body: JSON.stringify(
+            editOperation.value
+          ),
+        }
+      )
 
     const updatedOperation =
       await response.json()
@@ -186,64 +294,70 @@ async function updateOperation() {
       updatedOperation
 
     editMode.value = false
+    editError.value = ''
 
     await getOperations(
       currentPage.value,
       filtersActive.value
     )
   } catch (err) {
-    error.value = err.message
+    editError.value =
+      getErrorMessage(
+        err,
+        'Failed to update operation'
+      )
   }
 }
 
 async function deleteOperation() {
-  const confirmed = window.confirm(
-    `Delete "${selectedOperation.value.title}"?`
-  )
+  const confirmed =
+    window.confirm(
+      `Delete "${selectedOperation.value.title}"?`
+    )
 
   if (!confirmed) {
     return
   }
 
-  error.value = ''
+  deleteError.value = ''
 
   try {
-    const response = await fetch(
+    await apiFetch(
       `${OPERATIONS_API}/${selectedOperation.value.id}`,
       {
         method: 'DELETE',
       }
     )
 
-    if (!response.ok) {
-      throw new Error(
-        'Failed to delete operation'
-      )
-    }
-
     selectedOperation.value = null
     editMode.value = false
+    deleteError.value = ''
 
     await getOperations(
       0,
       filtersActive.value
     )
   } catch (err) {
-    error.value = err.message
+    deleteError.value =
+      getErrorMessage(
+        err,
+        'Failed to delete operation'
+      )
   }
 }
 
 async function createOperation() {
-  error.value = ''
+  createError.value = ''
 
   try {
-    const response = await fetch(
+    await apiFetch(
       OPERATIONS_API,
       {
         method: 'POST',
 
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type':
+            'application/json',
         },
 
         body: JSON.stringify(
@@ -251,17 +365,6 @@ async function createOperation() {
         ),
       }
     )
-
-    if (!response.ok) {
-      const data = await response.json()
-
-      const message =
-        data.error ||
-        Object.values(data).join(', ') ||
-        'Failed to create operation'
-
-      throw new Error(message)
-    }
 
     newOperation.value = {
       title: '',
@@ -271,6 +374,7 @@ async function createOperation() {
       status: 'PLANNED',
     }
 
+    createError.value = ''
     showCreateForm.value = false
 
     await getOperations(
@@ -278,12 +382,19 @@ async function createOperation() {
       filtersActive.value
     )
   } catch (err) {
-    error.value = err.message
+    createError.value =
+      getErrorMessage(
+        err,
+        'Failed to create operation'
+      )
   }
 }
 
 onMounted(() => {
-  getOperations(0, false)
+  getOperations(
+    0,
+    false
+  )
 })
 </script>
 
@@ -292,12 +403,15 @@ onMounted(() => {
     <div class="page-header">
       <div>
         <h1>Operations</h1>
-        <p>Manage operation records.</p>
+
+        <p>
+          Manage operation records.
+        </p>
       </div>
 
       <button
         class="add-button"
-        @click="showCreateForm = !showCreateForm"
+        @click="toggleCreateForm"
       >
         + Add Operation
       </button>
@@ -317,22 +431,30 @@ onMounted(() => {
         />
 
         <input
-          v-model="newOperation.description"
+          v-model="
+            newOperation.description
+          "
           type="text"
           placeholder="Description"
         />
 
         <input
-          v-model="newOperation.operationDate"
+          v-model="
+            newOperation.operationDate
+          "
           type="date"
         />
 
         <input
-          v-model="newOperation.operationTime"
+          v-model="
+            newOperation.operationTime
+          "
           type="time"
         />
 
-        <select v-model="newOperation.status">
+        <select
+          v-model="newOperation.status"
+        >
           <option value="PLANNED">
             PLANNED
           </option>
@@ -345,6 +467,19 @@ onMounted(() => {
             COMPLETED
           </option>
         </select>
+      </div>
+
+      <div
+        v-if="createError"
+        class="form-error"
+      >
+        <strong>
+          Unable to create operation
+        </strong>
+
+        <p>
+          {{ createError }}
+        </p>
       </div>
 
       <button
@@ -443,7 +578,9 @@ onMounted(() => {
       <div class="filter-field">
         <label>Direction</label>
 
-        <select v-model="sortDirection">
+        <select
+          v-model="sortDirection"
+        >
           <option value="desc">
             Descending
           </option>
@@ -456,7 +593,7 @@ onMounted(() => {
 
       <button
         class="search-button"
-        @click="filtersActive = true; getOperations(0, true)"
+        @click="searchOperations"
       >
         Search
       </button>
@@ -469,16 +606,56 @@ onMounted(() => {
       </button>
     </div>
 
-    <p v-if="loading">
-      Loading operations...
-    </p>
-
-    <p
-      v-else-if="error"
-      class="error-message"
+    <div
+      v-if="loading"
+      class="state-message"
     >
-      {{ error }}
-    </p>
+      Loading operations...
+    </div>
+
+    <div
+      v-else-if="pageError"
+      class="error-state"
+    >
+      <strong>
+        Unable to load operations
+      </strong>
+
+      <p>
+        {{ pageError }}
+      </p>
+
+      <button
+        class="retry-button"
+        @click="
+          getOperations(
+            currentPage,
+            filtersActive
+          )
+        "
+      >
+        Try Again
+      </button>
+    </div>
+
+    <div
+      v-else-if="
+        operations.length === 0
+      "
+      class="empty-state"
+    >
+      <strong>
+        No operations found
+      </strong>
+
+      <p>
+        {{
+          filtersActive
+            ? 'No operations match the selected filters.'
+            : 'There are no operations to display yet.'
+        }}
+      </p>
+    </div>
 
     <table v-else>
       <thead>
@@ -493,23 +670,33 @@ onMounted(() => {
 
       <tbody>
       <tr
-        v-for="operation in operations"
+        v-for="
+            operation in operations
+          "
         :key="operation.id"
         class="operation-row"
-        @click="selectedOperation = operation"
+        @click="
+            openOperation(operation)
+          "
       >
-        <td>{{ operation.id }}</td>
+        <td>
+          {{ operation.id }}
+        </td>
 
         <td>
           {{ operation.title }}
         </td>
 
         <td>
-          {{ operation.operationDate }}
+          {{
+            operation.operationDate
+          }}
         </td>
 
         <td>
-          {{ operation.operationTime }}
+          {{
+            operation.operationTime
+          }}
         </td>
 
         <td>
@@ -522,15 +709,17 @@ onMounted(() => {
     <div
       v-if="selectedOperation"
       class="modal-overlay"
-      @click.self="selectedOperation = null"
+      @click.self="closeOperation"
     >
       <div class="modal">
         <div class="modal-header">
-          <h2>Operation Details</h2>
+          <h2>
+            Operation Details
+          </h2>
 
           <button
             class="close-button"
-            @click="selectedOperation = null"
+            @click="closeOperation"
           >
             ×
           </button>
@@ -544,7 +733,9 @@ onMounted(() => {
             Title
 
             <input
-              v-model="editOperation.title"
+              v-model="
+                editOperation.title
+              "
               type="text"
             />
           </label>
@@ -553,7 +744,9 @@ onMounted(() => {
             Description
 
             <input
-              v-model="editOperation.description"
+              v-model="
+                editOperation.description
+              "
               type="text"
             />
           </label>
@@ -562,7 +755,9 @@ onMounted(() => {
             Date
 
             <input
-              v-model="editOperation.operationDate"
+              v-model="
+                editOperation.operationDate
+              "
               type="date"
             />
           </label>
@@ -571,7 +766,9 @@ onMounted(() => {
             Time
 
             <input
-              v-model="editOperation.operationTime"
+              v-model="
+                editOperation.operationTime
+              "
               type="time"
             />
           </label>
@@ -580,54 +777,84 @@ onMounted(() => {
             Status
 
             <select
-              v-model="editOperation.status"
+              v-model="
+                editOperation.status
+              "
             >
               <option value="PLANNED">
                 PLANNED
               </option>
 
-              <option value="IN_PROGRESS">
+              <option
+                value="IN_PROGRESS"
+              >
                 IN_PROGRESS
               </option>
 
-              <option value="COMPLETED">
+              <option
+                value="COMPLETED"
+              >
                 COMPLETED
               </option>
             </select>
           </label>
 
-          <button
-            class="save-button"
-            @click="updateOperation"
+          <div
+            v-if="editError"
+            class="form-error"
           >
-            Save Changes
-          </button>
+            <strong>
+              Unable to update operation
+            </strong>
 
-          <button
-            class="clear-button"
-            @click="editMode = false"
-          >
-            Cancel
-          </button>
+            <p>
+              {{ editError }}
+            </p>
+          </div>
+
+          <div class="edit-actions">
+            <button
+              class="save-button"
+              @click="updateOperation"
+            >
+              Save Changes
+            </button>
+
+            <button
+              class="clear-button"
+              @click="cancelEdit"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
 
         <div v-else>
           <div class="detail-row">
             <strong>ID</strong>
+
             <span>
-              {{ selectedOperation.id }}
+              {{
+                selectedOperation.id
+              }}
             </span>
           </div>
 
           <div class="detail-row">
             <strong>Title</strong>
+
             <span>
-              {{ selectedOperation.title }}
+              {{
+                selectedOperation.title
+              }}
             </span>
           </div>
 
           <div class="detail-row">
-            <strong>Description</strong>
+            <strong>
+              Description
+            </strong>
+
             <span>
               {{
                 selectedOperation.description ||
@@ -638,6 +865,7 @@ onMounted(() => {
 
           <div class="detail-row">
             <strong>Date</strong>
+
             <span>
               {{
                 selectedOperation.operationDate
@@ -647,6 +875,7 @@ onMounted(() => {
 
           <div class="detail-row">
             <strong>Time</strong>
+
             <span>
               {{
                 selectedOperation.operationTime
@@ -656,9 +885,25 @@ onMounted(() => {
 
           <div class="detail-row">
             <strong>Status</strong>
+
             <span>
-              {{ selectedOperation.status }}
+              {{
+                selectedOperation.status
+              }}
             </span>
+          </div>
+
+          <div
+            v-if="deleteError"
+            class="form-error"
+          >
+            <strong>
+              Unable to delete operation
+            </strong>
+
+            <p>
+              {{ deleteError }}
+            </p>
           </div>
 
           <div class="modal-actions">
@@ -670,6 +915,7 @@ onMounted(() => {
             </button>
 
             <button
+              v-if="isAdmin"
               class="delete-button"
               @click="deleteOperation"
             >
@@ -687,20 +933,35 @@ onMounted(() => {
 
       <div class="page-controls">
         <button
-          :disabled="currentPage === 0"
-          @click="changePage(currentPage - 1)"
+          :disabled="
+            currentPage === 0
+          "
+          @click="
+            changePage(
+              currentPage - 1
+            )
+          "
         >
           Previous
         </button>
 
         <span>
-          Page {{ currentPage + 1 }}
-          of {{ totalPages || 1 }}
+          Page
+          {{ currentPage + 1 }}
+          of
+          {{ totalPages || 1 }}
         </span>
 
         <button
-          :disabled="currentPage >= totalPages - 1"
-          @click="changePage(currentPage + 1)"
+          :disabled="
+            currentPage >=
+            totalPages - 1
+          "
+          @click="
+            changePage(
+              currentPage + 1
+            )
+          "
         >
           Next
         </button>
@@ -739,7 +1000,8 @@ onMounted(() => {
 
 .create-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns:
+    repeat(5, 1fr);
   gap: 12px;
 }
 
@@ -863,7 +1125,9 @@ th {
   cursor: pointer;
 }
 
-.page-controls button:hover:not(:disabled) {
+.page-controls button:hover:not(
+  :disabled
+) {
   background: #f0f0f0;
 }
 
@@ -878,7 +1142,8 @@ th {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
+  background:
+    rgba(0, 0, 0, 0.45);
   z-index: 1000;
 }
 
@@ -913,9 +1178,11 @@ th {
 
 .detail-row {
   display: grid;
-  grid-template-columns: 130px 1fr;
+  grid-template-columns:
+    130px 1fr;
   padding: 12px 0;
-  border-bottom: 1px solid #eee;
+  border-bottom:
+    1px solid #eee;
 }
 
 .detail-row:last-child {
@@ -950,6 +1217,11 @@ th {
   padding: 9px 10px;
   border: 1px solid #ccc;
   border-radius: 5px;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .save-button {
@@ -988,7 +1260,105 @@ th {
   background: #fef2f2;
 }
 
-.error-message {
+.state-message {
+  margin-top: 24px;
+  padding: 20px;
+  text-align: center;
+  color: #4b5563;
+}
+
+.error-state,
+.empty-state {
+  margin-top: 24px;
+  padding: 24px;
+  border:
+    1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  text-align: center;
+}
+
+.error-state {
+  border-color: #fecaca;
+}
+
+.error-state strong {
   color: #b91c1c;
+}
+
+.error-state p,
+.empty-state p {
+  margin: 8px 0 0;
+  color: #6b7280;
+}
+
+.form-error {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.form-error strong {
+  display: block;
+}
+
+.form-error p {
+  margin:
+    5px 0 0;
+}
+
+.retry-button {
+  margin-top: 16px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 5px;
+  background: #1f2937;
+  color: white;
+  cursor: pointer;
+}
+
+.retry-button:hover {
+  background: #374151;
+}
+
+@media (max-width: 1100px) {
+  .filters {
+    flex-wrap: wrap;
+  }
+
+  .create-grid {
+    grid-template-columns:
+      repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .page-header {
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .create-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagination {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+  }
 }
 </style>

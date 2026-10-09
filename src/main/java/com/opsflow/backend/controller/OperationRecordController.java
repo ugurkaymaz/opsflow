@@ -62,10 +62,15 @@ public class OperationRecordController {
             @PathVariable Long id,
             @Valid @RequestBody OperationRecordRequest request) {
 
-        return service.update(id, request.toEntity())
-                .map(OperationRecordResponse::new)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        OperationRecord updated =
+                service.update(
+                        id,
+                        request.toEntity()
+                );
+
+        return ResponseEntity.ok(
+                new OperationRecordResponse(updated)
+        );
     }
 
     @Operation(
@@ -85,14 +90,17 @@ public class OperationRecordController {
             summary = "Get operation by ID",
             description = "Retrieves a single operation record using its unique ID."
     )
+
     @GetMapping("/{id}")
     public ResponseEntity<OperationRecordResponse> getById(
             @PathVariable Long id) {
 
-        return service.getById(id)
-                .map(OperationRecordResponse::new)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        OperationRecord record =
+                service.getById(id);
+
+        return ResponseEntity.ok(
+                new OperationRecordResponse(record)
+        );
     }
 
     @Operation(
@@ -100,15 +108,14 @@ public class OperationRecordController {
             description = "Deletes an operation record using its unique ID."
     )
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
-
-        if (service.getById(id).isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
+    public ResponseEntity<Void> delete(
+            @PathVariable Long id) {
 
         service.delete(id);
 
-        return ResponseEntity.noContent().build();
+        return ResponseEntity
+                .noContent()
+                .build();
     }
 
     @Operation(

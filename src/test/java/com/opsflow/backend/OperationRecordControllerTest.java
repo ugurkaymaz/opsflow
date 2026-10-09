@@ -3,6 +3,8 @@ package com.opsflow.backend;
 import com.opsflow.backend.controller.OperationRecordController;
 import com.opsflow.backend.dto.OperationSummary;
 import com.opsflow.backend.entity.OperationRecord;
+import com.opsflow.backend.exception.ResourceNotFoundException;
+import com.opsflow.backend.service.JwtService;
 import com.opsflow.backend.service.OperationRecordService;
 
 import org.junit.jupiter.api.Test;
@@ -20,7 +22,6 @@ import java.time.LocalTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -35,6 +36,9 @@ class OperationRecordControllerTest {
 
     @MockitoBean
     private OperationRecordService service;
+
+    @MockitoBean
+    private JwtService jwtService;
 
     @Test
     void shouldGetAllOperations() throws Exception {
@@ -65,7 +69,7 @@ class OperationRecordControllerTest {
         OperationRecord record = createRecord();
 
         when(service.getById(1L))
-                .thenReturn(java.util.Optional.of(record));
+                .thenReturn(record);
 
         mockMvc.perform(get("/api/operations/1"))
                 .andExpect(status().isOk())
@@ -83,17 +87,33 @@ class OperationRecordControllerTest {
     }
 
     @Test
-    void shouldReturn404WhenOperationNotFound() throws Exception {
+    void shouldReturn404WhenOperationNotFound()
+            throws Exception {
 
         when(service.getById(9999L))
-                .thenReturn(java.util.Optional.empty());
+                .thenThrow(
+                        new ResourceNotFoundException(
+                                "Operation not found with id: 9999"
+                        )
+                );
 
         mockMvc.perform(get("/api/operations/9999"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status")
+                        .value(404))
+                .andExpect(jsonPath("$.error")
+                        .value("Not Found"))
+                .andExpect(jsonPath("$.message")
+                        .value("Operation not found with id: 9999"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/operations/9999"))
+                .andExpect(jsonPath("$.timestamp")
+                        .exists());
     }
 
     @Test
-    void shouldReturn400WhenCreateRequestIsInvalid() throws Exception {
+    void shouldReturn400WhenCreateRequestIsInvalid()
+            throws Exception {
 
         String invalidJson = """
                 {
@@ -109,23 +129,36 @@ class OperationRecordControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidJson))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.title")
-                        .value("Title is required"))
-                .andExpect(jsonPath("$.operationDate")
-                        .value("Operation date is required"))
-                .andExpect(jsonPath("$.operationTime")
-                        .value("Operation time is required"))
                 .andExpect(jsonPath("$.status")
+                        .value(400))
+                .andExpect(jsonPath("$.error")
+                        .value("Validation Failed"))
+                .andExpect(jsonPath("$.message")
+                        .value("Request validation failed"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/operations"))
+                .andExpect(jsonPath("$.timestamp").exists())
+                .andExpect(jsonPath("$.validationErrors.title")
+                        .value("Title is required"))
+                .andExpect(jsonPath("$.validationErrors.operationDate")
+                        .value("Operation date is required"))
+                .andExpect(jsonPath("$.validationErrors.operationTime")
+                        .value("Operation time is required"))
+                .andExpect(jsonPath("$.validationErrors.status")
                         .value("Status is required"));
     }
 
     @Test
     void shouldCreateOperation() throws Exception {
 
-        OperationRecord savedRecord = new OperationRecord();
+        OperationRecord savedRecord =
+                new OperationRecord();
+
         savedRecord.setId(5L);
         savedRecord.setTitle("Server Upgrade");
-        savedRecord.setDescription("Upgrade application server");
+        savedRecord.setDescription(
+                "Upgrade application server"
+        );
         savedRecord.setOperationDate(
                 LocalDate.of(2026, 9, 25)
         );
@@ -134,8 +167,9 @@ class OperationRecordControllerTest {
         );
         savedRecord.setStatus("PLANNED");
 
-        when(service.create(any(OperationRecord.class)))
-                .thenReturn(savedRecord);
+        when(service.create(
+                any(OperationRecord.class)
+        )).thenReturn(savedRecord);
 
         String validJson = """
                 {
@@ -167,10 +201,16 @@ class OperationRecordControllerTest {
     @Test
     void shouldUpdateOperation() throws Exception {
 
-        OperationRecord updatedRecord = new OperationRecord();
+        OperationRecord updatedRecord =
+                new OperationRecord();
+
         updatedRecord.setId(5L);
-        updatedRecord.setTitle("Updated Server Upgrade");
-        updatedRecord.setDescription("Server upgrade completed");
+        updatedRecord.setTitle(
+                "Updated Server Upgrade"
+        );
+        updatedRecord.setDescription(
+                "Server upgrade completed"
+        );
         updatedRecord.setOperationDate(
                 LocalDate.of(2026, 9, 26)
         );
@@ -182,9 +222,7 @@ class OperationRecordControllerTest {
         when(service.update(
                 eq(5L),
                 any(OperationRecord.class)
-        )).thenReturn(
-                java.util.Optional.of(updatedRecord)
-        );
+        )).thenReturn(updatedRecord);
 
         String updateJson = """
                 {
@@ -220,7 +258,11 @@ class OperationRecordControllerTest {
         when(service.update(
                 eq(9999L),
                 any(OperationRecord.class)
-        )).thenReturn(java.util.Optional.empty());
+        )).thenThrow(
+                new ResourceNotFoundException(
+                        "Operation not found with id: 9999"
+                )
+        );
 
         String updateJson = """
                 {
@@ -235,16 +277,21 @@ class OperationRecordControllerTest {
         mockMvc.perform(put("/api/operations/9999")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(updateJson))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status")
+                        .value(404))
+                .andExpect(jsonPath("$.error")
+                        .value("Not Found"))
+                .andExpect(jsonPath("$.message")
+                        .value("Operation not found with id: 9999"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/operations/9999"))
+                .andExpect(jsonPath("$.timestamp")
+                        .exists());
     }
 
     @Test
     void shouldDeleteOperation() throws Exception {
-
-        OperationRecord record = createRecord();
-
-        when(service.getById(5L))
-                .thenReturn(java.util.Optional.of(record));
 
         mockMvc.perform(delete("/api/operations/5"))
                 .andExpect(status().isNoContent());
@@ -256,14 +303,26 @@ class OperationRecordControllerTest {
     void shouldReturn404WhenDeletingNonExistingOperation()
             throws Exception {
 
-        when(service.getById(9999L))
-                .thenReturn(java.util.Optional.empty());
+        org.mockito.Mockito.doThrow(
+                new ResourceNotFoundException(
+                        "Operation not found with id: 9999"
+                )
+        ).when(service).delete(9999L);
 
         mockMvc.perform(delete("/api/operations/9999"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status")
+                        .value(404))
+                .andExpect(jsonPath("$.error")
+                        .value("Not Found"))
+                .andExpect(jsonPath("$.message")
+                        .value("Operation not found with id: 9999"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/operations/9999"))
+                .andExpect(jsonPath("$.timestamp")
+                        .exists());
 
-        verify(service, never())
-                .delete(9999L);
+        verify(service).delete(9999L);
     }
 
     @Test
@@ -272,10 +331,13 @@ class OperationRecordControllerTest {
         OperationRecord record = createRecord();
 
         Page<OperationRecord> page =
-                new PageImpl<>(List.of(record));
+                new PageImpl<>(
+                        List.of(record)
+                );
 
-        when(service.getAll(any(Pageable.class)))
-                .thenReturn(page);
+        when(service.getAll(
+                any(Pageable.class)
+        )).thenReturn(page);
 
         mockMvc.perform(get("/api/operations/page")
                         .param("page", "0")
@@ -299,8 +361,16 @@ class OperationRecordControllerTest {
                         .param("page", "0")
                         .param("size", "101"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status")
+                        .value(400))
                 .andExpect(jsonPath("$.error")
-                        .value("Page size must not exceed 100"));
+                        .value("Bad Request"))
+                .andExpect(jsonPath("$.message")
+                        .value("Page size must not exceed 100"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/operations/page"))
+                .andExpect(jsonPath("$.timestamp")
+                        .exists());
     }
 
     @Test
@@ -310,7 +380,9 @@ class OperationRecordControllerTest {
         OperationRecord record = createRecord();
 
         Page<OperationRecord> resultPage =
-                new PageImpl<>(List.of(record));
+                new PageImpl<>(
+                        List.of(record)
+                );
 
         when(service.search(
                 eq(LocalDate.of(2026, 9, 20)),
@@ -349,7 +421,9 @@ class OperationRecordControllerTest {
         record.setStatus("COMPLETED");
 
         Page<OperationRecord> resultPage =
-                new PageImpl<>(List.of(record));
+                new PageImpl<>(
+                        List.of(record)
+                );
 
         when(service.search(
                 isNull(),
@@ -383,8 +457,16 @@ class OperationRecordControllerTest {
                         .param("sortBy", "abc")
                         .param("direction", "desc"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status")
+                        .value(400))
                 .andExpect(jsonPath("$.error")
-                        .value("Invalid sort field: abc"));
+                        .value("Bad Request"))
+                .andExpect(jsonPath("$.message")
+                        .value("Invalid sort field: abc"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/operations/search"))
+                .andExpect(jsonPath("$.timestamp")
+                        .exists());
     }
 
     @Test
@@ -397,10 +479,16 @@ class OperationRecordControllerTest {
                         .param("sortBy", "title")
                         .param("direction", "test"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status")
+                        .value(400))
                 .andExpect(jsonPath("$.error")
-                        .value(
-                                "Sort direction must be 'asc' or 'desc'"
-                        ));
+                        .value("Bad Request"))
+                .andExpect(jsonPath("$.message")
+                        .value("Sort direction must be 'asc' or 'desc'"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/operations/search"))
+                .andExpect(jsonPath("$.timestamp")
+                        .exists());
     }
 
     @Test
@@ -425,14 +513,21 @@ class OperationRecordControllerTest {
                         .param("page", "0")
                         .param("size", "10"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status")
+                        .value(400))
                 .andExpect(jsonPath("$.error")
-                        .value(
-                                "startDate and endDate must be provided together"
-                        ));
+                        .value("Bad Request"))
+                .andExpect(jsonPath("$.message")
+                        .value("startDate and endDate must be provided together"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/operations/search"))
+                .andExpect(jsonPath("$.timestamp")
+                        .exists());
     }
 
     @Test
-    void shouldGetOperationSummary() throws Exception {
+    void shouldGetOperationSummary()
+            throws Exception {
 
         OperationSummary summary =
                 new OperationSummary(
@@ -539,10 +634,16 @@ class OperationRecordControllerTest {
                                 )
                 )
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status")
+                        .value(400))
                 .andExpect(jsonPath("$.error")
-                        .value(
-                                "startDate and endDate must be provided together"
-                        ));
+                        .value("Bad Request"))
+                .andExpect(jsonPath("$.message")
+                        .value("startDate and endDate must be provided together"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/operations/summary"))
+                .andExpect(jsonPath("$.timestamp")
+                        .exists());
 
         verify(service)
                 .getSummary(
@@ -557,7 +658,9 @@ class OperationRecordControllerTest {
                 new OperationRecord();
 
         record.setId(1L);
-        record.setTitle("System Maintenance");
+        record.setTitle(
+                "System Maintenance"
+        );
         record.setDescription(
                 "Database server maintenance"
         );

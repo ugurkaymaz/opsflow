@@ -1,0 +1,19 @@
+services:
+  mysql:
+    ports: !override []
+
+  backend:
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      CORS_ALLOWED_ORIGIN: ${PROD_CORS_ALLOWED_ORIGIN:?Set PROD_CORS_ALLOWED_ORIGIN}
+    ports: !override
+      - "127.0.0.1:8080:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ""
+    ports: !override
+      - "127.0.0.1:5173:80"

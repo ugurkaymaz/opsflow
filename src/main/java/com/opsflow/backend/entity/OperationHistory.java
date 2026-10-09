@@ -27,6 +27,18 @@ public class OperationHistory {
     @Column(name = "operation_title", length = 100)
     private String operationTitle;
 
+    @Column(name = "user_id")
+    private Long userId;
+
+    @Column(name = "user_email", length = 150)
+    private String userEmail;
+
+    @Column(name = "user_role", length = 30)
+    private String userRole;
+
+    @Column(name = "user_name", length = 100)
+    private String userName;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -39,6 +51,10 @@ public class OperationHistory {
             String oldStatus,
             String newStatus,
             String operationTitle,
+            Long userId,
+            String userEmail,
+            String userRole,
+            String userName,
             LocalDateTime createdAt) {
 
         this.operationId = operationId;
@@ -46,6 +62,10 @@ public class OperationHistory {
         this.oldStatus = oldStatus;
         this.newStatus = newStatus;
         this.operationTitle = operationTitle;
+        this.userId = userId;
+        this.userEmail = userEmail;
+        this.userRole = userRole;
+        this.userName = userName;
         this.createdAt = createdAt;
     }
 
@@ -95,6 +115,38 @@ public class OperationHistory {
 
     public void setOperationTitle(String operationTitle) {
         this.operationTitle = operationTitle;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public String getUserEmail() {
+        return userEmail;
+    }
+
+    public void setUserEmail(String userEmail) {
+        this.userEmail = userEmail;
+    }
+
+    public String getUserRole() {
+        return userRole;
+    }
+
+    public void setUserRole(String userRole) {
+        this.userRole = userRole;
+    }
+
+    public String getUserName() {
+        return userName;
+    }
+
+    public void setUserName(String userName) {
+        this.userName = userName;
     }
 
     public LocalDateTime getCreatedAt() {

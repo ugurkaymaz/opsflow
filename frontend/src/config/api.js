@@ -1,6 +1,12 @@
+
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  'http://localhost:8080'
+  (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '')
+
+export const AUTH_API =
+  `${API_BASE_URL}/api/auth`
+
+export const LOGIN_API =
+  `${AUTH_API}/login`
 
 export const OPERATIONS_API =
   `${API_BASE_URL}/api/operations`

@@ -1,9 +1,15 @@
 package com.opsflow.backend;
 
+import com.opsflow.backend.dto.OperationSummary;
+import com.opsflow.backend.entity.AppUser;
 import com.opsflow.backend.entity.OperationRecord;
-import com.opsflow.backend.repository.OperationRecordRepository;
+import com.opsflow.backend.entity.UserRole;
+import com.opsflow.backend.exception.ResourceNotFoundException;
+import com.opsflow.backend.repository.AppUserRepository;
 import com.opsflow.backend.repository.OperationHistoryRepository;
+import com.opsflow.backend.repository.OperationRecordRepository;
 import com.opsflow.backend.service.OperationRecordService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -11,10 +17,13 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.verify;
@@ -25,34 +34,78 @@ class OperationRecordServiceTest {
 
     private OperationRecordRepository repository;
     private OperationHistoryRepository historyRepository;
+    private AppUserRepository userRepository;
     private OperationRecordService service;
 
     @BeforeEach
     void setUp() {
+
         repository =
                 Mockito.mock(OperationRecordRepository.class);
 
         historyRepository =
                 Mockito.mock(OperationHistoryRepository.class);
 
+        userRepository =
+                Mockito.mock(AppUserRepository.class);
+
+        AppUser authenticatedUser =
+                new AppUser();
+
+        authenticatedUser.setId(2L);
+        authenticatedUser.setName("Standard User");
+        authenticatedUser.setEmail("user@opsflow.com");
+        authenticatedUser.setRole(UserRole.USER);
+
+        when(
+                userRepository.findByEmail(
+                        "user@opsflow.com"
+                )
+        ).thenReturn(
+                Optional.of(authenticatedUser)
+        );
+
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(
+                        "user@opsflow.com",
+                        null,
+                        List.of()
+                );
+
+        SecurityContextHolder
+                .getContext()
+                .setAuthentication(authentication);
+
         service =
                 new OperationRecordService(
                         repository,
-                        historyRepository
+                        historyRepository,
+                        userRepository
                 );
+    }
+
+    @AfterEach
+    void tearDown() {
+
+        SecurityContextHolder.clearContext();
     }
 
     @Test
     void shouldCreateOperation() {
 
-        OperationRecord record = new OperationRecord();
+        OperationRecord record =
+                new OperationRecord();
+
         record.setTitle("System Maintenance");
 
-        when(repository.save(record)).thenReturn(record);
+        when(repository.save(record))
+                .thenReturn(record);
 
-        OperationRecord result = service.create(record);
+        OperationRecord result =
+                service.create(record);
 
-        verify(repository).save(record);
+        verify(repository)
+                .save(record);
 
         assertEquals(
                 "System Maintenance",
@@ -63,55 +116,71 @@ class OperationRecordServiceTest {
     @Test
     void shouldGetOperationById() {
 
-        OperationRecord record = new OperationRecord();
+        OperationRecord record =
+                new OperationRecord();
+
         record.setId(1L);
         record.setTitle("System Maintenance");
 
         when(repository.findById(1L))
-                .thenReturn(java.util.Optional.of(record));
+                .thenReturn(
+                        Optional.of(record)
+                );
 
-        java.util.Optional<OperationRecord> result =
+        OperationRecord result =
                 service.getById(1L);
 
-        verify(repository).findById(1L);
-
-        assertTrue(result.isPresent());
+        verify(repository)
+                .findById(1L);
 
         assertEquals(
                 1L,
-                result.get().getId()
+                result.getId()
         );
 
         assertEquals(
                 "System Maintenance",
-                result.get().getTitle()
+                result.getTitle()
         );
     }
 
     @Test
-    void shouldReturnEmptyWhenOperationNotFound() {
+    void shouldThrowResourceNotFoundWhenOperationNotFound() {
 
         when(repository.findById(9999L))
-                .thenReturn(java.util.Optional.empty());
+                .thenReturn(
+                        Optional.empty()
+                );
 
-        java.util.Optional<OperationRecord> result =
-                service.getById(9999L);
+        ResourceNotFoundException exception =
+                assertThrows(
+                        ResourceNotFoundException.class,
+                        () -> service.getById(9999L)
+                );
 
-        verify(repository).findById(9999L);
+        assertEquals(
+                "Operation not found with id: 9999",
+                exception.getMessage()
+        );
 
-        assertTrue(result.isEmpty());
+        verify(repository)
+                .findById(9999L);
     }
 
     @Test
     void shouldUpdateOperation() {
 
-        OperationRecord existingRecord = new OperationRecord();
+        OperationRecord existingRecord =
+                new OperationRecord();
+
         existingRecord.setId(1L);
         existingRecord.setTitle("Old Title");
         existingRecord.setDescription("Old Description");
         existingRecord.setStatus("PLANNED");
 
-        OperationRecord updatedRecord = new OperationRecord();
+        OperationRecord updatedRecord =
+                new OperationRecord();
+
         updatedRecord.setTitle("Updated Title");
         updatedRecord.setDescription("Updated Description");
         updatedRecord.setOperationDate(
@@ -123,39 +192,57 @@ class OperationRecordServiceTest {
         updatedRecord.setStatus("COMPLETED");
 
         when(repository.findById(1L))
-                .thenReturn(java.util.Optional.of(existingRecord));
+                .thenReturn(
+                        Optional.of(existingRecord)
+                );
 
         when(repository.save(existingRecord))
                 .thenReturn(existingRecord);
 
-        java.util.Optional<OperationRecord> result =
-                service.update(1L, updatedRecord);
-
-        assertTrue(result.isPresent());
+        OperationRecord result =
+                service.update(
+                        1L,
+                        updatedRecord
+                );
 
         assertEquals(
                 "Updated Title",
-                result.get().getTitle()
+                result.getTitle()
         );
 
         assertEquals(
                 "Updated Description",
-                result.get().getDescription()
+                result.getDescription()
+        );
+
+        assertEquals(
+                LocalDate.of(2026, 9, 25),
+                result.getOperationDate()
+        );
+
+        assertEquals(
+                LocalTime.of(14, 30),
+                result.getOperationTime()
         );
 
         assertEquals(
                 "COMPLETED",
-                result.get().getStatus()
+                result.getStatus()
         );
 
-        verify(repository).findById(1L);
-        verify(repository).save(existingRecord);
+        verify(repository)
+                .findById(1L);
+
+        verify(repository)
+                .save(existingRecord);
     }
 
     @Test
-    void shouldReturnEmptyWhenUpdatingNonExistingOperation() {
+    void shouldThrowResourceNotFoundWhenUpdatingNonExistingOperation() {
 
-        OperationRecord updatedRecord = new OperationRecord();
+        OperationRecord updatedRecord =
+                new OperationRecord();
+
         updatedRecord.setTitle("Updated Title");
         updatedRecord.setDescription("Updated Description");
         updatedRecord.setOperationDate(
@@ -167,19 +254,35 @@ class OperationRecordServiceTest {
         updatedRecord.setStatus("COMPLETED");
 
         when(repository.findById(9999L))
-                .thenReturn(java.util.Optional.empty());
+                .thenReturn(
+                        Optional.empty()
+                );
 
-        java.util.Optional<OperationRecord> result =
-                service.update(9999L, updatedRecord);
+        ResourceNotFoundException exception =
+                assertThrows(
+                        ResourceNotFoundException.class,
+                        () -> service.update(
+                                9999L,
+                                updatedRecord
+                        )
+                );
 
-        assertTrue(result.isEmpty());
+        assertEquals(
+                "Operation not found with id: 9999",
+                exception.getMessage()
+        );
 
-        verify(repository).findById(9999L);
+        verify(repository)
+                .findById(9999L);
 
         Mockito.verify(
                 repository,
                 Mockito.never()
-        ).save(Mockito.any(OperationRecord.class));
+        ).save(
+                Mockito.any(OperationRecord.class)
+        );
+
+        verifyNoInteractions(historyRepository);
     }
 
     @Test
@@ -213,6 +316,36 @@ class OperationRecordServiceTest {
     }
 
     @Test
+    void shouldThrowExceptionWhenStartDateIsMissing() {
+
+        LocalDate endDate =
+                LocalDate.of(2026, 9, 25);
+
+        Pageable pageable =
+                PageRequest.of(0, 10);
+
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> service.search(
+                                null,
+                                endDate,
+                                null,
+                                null,
+                                null,
+                                pageable
+                        )
+                );
+
+        assertEquals(
+                "startDate and endDate must be provided together",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(repository);
+    }
+
+    @Test
     void shouldThrowExceptionWhenEndTimeIsMissing() {
 
         LocalTime startTime =
@@ -229,6 +362,36 @@ class OperationRecordServiceTest {
                                 null,
                                 startTime,
                                 null,
+                                null,
+                                pageable
+                        )
+                );
+
+        assertEquals(
+                "startTime and endTime must be provided together",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void shouldThrowExceptionWhenStartTimeIsMissing() {
+
+        LocalTime endTime =
+                LocalTime.of(17, 0);
+
+        Pageable pageable =
+                PageRequest.of(0, 10);
+
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> service.search(
+                                null,
+                                null,
+                                null,
+                                endTime,
                                 null,
                                 pageable
                         )
@@ -323,11 +486,13 @@ class OperationRecordServiceTest {
         Page<OperationRecord> expectedPage =
                 new PageImpl<>(List.of());
 
-        when(repository.findByOperationDateBetween(
-                startDate,
-                endDate,
-                pageable
-        )).thenReturn(expectedPage);
+        when(
+                repository.findByOperationDateBetween(
+                        startDate,
+                        endDate,
+                        pageable
+                )
+        ).thenReturn(expectedPage);
 
         Page<OperationRecord> result =
                 service.search(
@@ -344,11 +509,12 @@ class OperationRecordServiceTest {
                 result
         );
 
-        verify(repository).findByOperationDateBetween(
-                startDate,
-                endDate,
-                pageable
-        );
+        verify(repository)
+                .findByOperationDateBetween(
+                        startDate,
+                        endDate,
+                        pageable
+                );
     }
 
     @Test
@@ -366,11 +532,13 @@ class OperationRecordServiceTest {
         Page<OperationRecord> expectedPage =
                 new PageImpl<>(List.of());
 
-        when(repository.findByOperationTimeBetween(
-                startTime,
-                endTime,
-                pageable
-        )).thenReturn(expectedPage);
+        when(
+                repository.findByOperationTimeBetween(
+                        startTime,
+                        endTime,
+                        pageable
+                )
+        ).thenReturn(expectedPage);
 
         Page<OperationRecord> result =
                 service.search(
@@ -387,11 +555,12 @@ class OperationRecordServiceTest {
                 result
         );
 
-        verify(repository).findByOperationTimeBetween(
-                startTime,
-                endTime,
-                pageable
-        );
+        verify(repository)
+                .findByOperationTimeBetween(
+                        startTime,
+                        endTime,
+                        pageable
+                );
     }
 
     @Test
@@ -415,13 +584,16 @@ class OperationRecordServiceTest {
         Page<OperationRecord> expectedPage =
                 new PageImpl<>(List.of());
 
-        when(repository.findByOperationDateBetweenAndOperationTimeBetween(
-                startDate,
-                endDate,
-                startTime,
-                endTime,
-                pageable
-        )).thenReturn(expectedPage);
+        when(
+                repository
+                        .findByOperationDateBetweenAndOperationTimeBetween(
+                                startDate,
+                                endDate,
+                                startTime,
+                                endTime,
+                                pageable
+                        )
+        ).thenReturn(expectedPage);
 
         Page<OperationRecord> result =
                 service.search(
@@ -475,7 +647,8 @@ class OperationRecordServiceTest {
                 result
         );
 
-        verify(repository).findAll(pageable);
+        verify(repository)
+                .findAll(pageable);
     }
 
     @Test
@@ -487,10 +660,12 @@ class OperationRecordServiceTest {
         Page<OperationRecord> expectedPage =
                 new PageImpl<>(List.of());
 
-        when(repository.findByStatus(
-                "COMPLETED",
-                pageable
-        )).thenReturn(expectedPage);
+        when(
+                repository.findByStatus(
+                        "COMPLETED",
+                        pageable
+                )
+        ).thenReturn(expectedPage);
 
         Page<OperationRecord> result =
                 service.search(
@@ -502,12 +677,16 @@ class OperationRecordServiceTest {
                         pageable
                 );
 
-        assertSame(expectedPage, result);
-
-        verify(repository).findByStatus(
-                "COMPLETED",
-                pageable
+        assertSame(
+                expectedPage,
+                result
         );
+
+        verify(repository)
+                .findByStatus(
+                        "COMPLETED",
+                        pageable
+                );
     }
 
     @Test
@@ -519,10 +698,12 @@ class OperationRecordServiceTest {
         Page<OperationRecord> expectedPage =
                 new PageImpl<>(List.of());
 
-        when(repository.findByStatus(
-                "COMPLETED",
-                pageable
-        )).thenReturn(expectedPage);
+        when(
+                repository.findByStatus(
+                        "COMPLETED",
+                        pageable
+                )
+        ).thenReturn(expectedPage);
 
         Page<OperationRecord> result =
                 service.search(
@@ -534,12 +715,16 @@ class OperationRecordServiceTest {
                         pageable
                 );
 
-        assertSame(expectedPage, result);
-
-        verify(repository).findByStatus(
-                "COMPLETED",
-                pageable
+        assertSame(
+                expectedPage,
+                result
         );
+
+        verify(repository)
+                .findByStatus(
+                        "COMPLETED",
+                        pageable
+                );
     }
 
     @Test
@@ -584,12 +769,15 @@ class OperationRecordServiceTest {
         Page<OperationRecord> expectedPage =
                 new PageImpl<>(List.of());
 
-        when(repository.findByStatusAndOperationDateBetween(
-                "PLANNED",
-                startDate,
-                endDate,
-                pageable
-        )).thenReturn(expectedPage);
+        when(
+                repository
+                        .findByStatusAndOperationDateBetween(
+                                "PLANNED",
+                                startDate,
+                                endDate,
+                                pageable
+                        )
+        ).thenReturn(expectedPage);
 
         Page<OperationRecord> result =
                 service.search(
@@ -601,7 +789,10 @@ class OperationRecordServiceTest {
                         pageable
                 );
 
-        assertSame(expectedPage, result);
+        assertSame(
+                expectedPage,
+                result
+        );
 
         verify(repository)
                 .findByStatusAndOperationDateBetween(
@@ -627,12 +818,15 @@ class OperationRecordServiceTest {
         Page<OperationRecord> expectedPage =
                 new PageImpl<>(List.of());
 
-        when(repository.findByStatusAndOperationTimeBetween(
-                "IN_PROGRESS",
-                startTime,
-                endTime,
-                pageable
-        )).thenReturn(expectedPage);
+        when(
+                repository
+                        .findByStatusAndOperationTimeBetween(
+                                "IN_PROGRESS",
+                                startTime,
+                                endTime,
+                                pageable
+                        )
+        ).thenReturn(expectedPage);
 
         Page<OperationRecord> result =
                 service.search(
@@ -644,7 +838,10 @@ class OperationRecordServiceTest {
                         pageable
                 );
 
-        assertSame(expectedPage, result);
+        assertSame(
+                expectedPage,
+                result
+        );
 
         verify(repository)
                 .findByStatusAndOperationTimeBetween(
@@ -676,15 +873,17 @@ class OperationRecordServiceTest {
         Page<OperationRecord> expectedPage =
                 new PageImpl<>(List.of());
 
-        when(repository
-                .findByStatusAndOperationDateBetweenAndOperationTimeBetween(
-                        "COMPLETED",
-                        startDate,
-                        endDate,
-                        startTime,
-                        endTime,
-                        pageable
-                )).thenReturn(expectedPage);
+        when(
+                repository
+                        .findByStatusAndOperationDateBetweenAndOperationTimeBetween(
+                                "COMPLETED",
+                                startDate,
+                                endDate,
+                                startTime,
+                                endTime,
+                                pageable
+                        )
+        ).thenReturn(expectedPage);
 
         Page<OperationRecord> result =
                 service.search(
@@ -696,7 +895,10 @@ class OperationRecordServiceTest {
                         pageable
                 );
 
-        assertSame(expectedPage, result);
+        assertSame(
+                expectedPage,
+                result
+        );
 
         verify(repository)
                 .findByStatusAndOperationDateBetweenAndOperationTimeBetween(
@@ -724,7 +926,7 @@ class OperationRecordServiceTest {
         when(repository.countByStatus("COMPLETED"))
                 .thenReturn(4L);
 
-        com.opsflow.backend.dto.OperationSummary result =
+        OperationSummary result =
                 service.getSummary();
 
         assertEquals(
@@ -747,10 +949,17 @@ class OperationRecordServiceTest {
                 result.getCompleted()
         );
 
-        verify(repository).count();
-        verify(repository).countByStatus("PLANNED");
-        verify(repository).countByStatus("IN_PROGRESS");
-        verify(repository).countByStatus("COMPLETED");
+        verify(repository)
+                .count();
+
+        verify(repository)
+                .countByStatus("PLANNED");
+
+        verify(repository)
+                .countByStatus("IN_PROGRESS");
+
+        verify(repository)
+                .countByStatus("COMPLETED");
     }
 
     @Test
@@ -762,30 +971,38 @@ class OperationRecordServiceTest {
         LocalDate endDate =
                 LocalDate.of(2026, 9, 25);
 
-        when(repository.countByOperationDateBetween(
-                startDate,
-                endDate
-        )).thenReturn(6L);
+        when(
+                repository.countByOperationDateBetween(
+                        startDate,
+                        endDate
+                )
+        ).thenReturn(6L);
 
-        when(repository.countByStatusAndOperationDateBetween(
-                "PLANNED",
-                startDate,
-                endDate
-        )).thenReturn(3L);
+        when(
+                repository.countByStatusAndOperationDateBetween(
+                        "PLANNED",
+                        startDate,
+                        endDate
+                )
+        ).thenReturn(3L);
 
-        when(repository.countByStatusAndOperationDateBetween(
-                "IN_PROGRESS",
-                startDate,
-                endDate
-        )).thenReturn(1L);
+        when(
+                repository.countByStatusAndOperationDateBetween(
+                        "IN_PROGRESS",
+                        startDate,
+                        endDate
+                )
+        ).thenReturn(1L);
 
-        when(repository.countByStatusAndOperationDateBetween(
-                "COMPLETED",
-                startDate,
-                endDate
-        )).thenReturn(2L);
+        when(
+                repository.countByStatusAndOperationDateBetween(
+                        "COMPLETED",
+                        startDate,
+                        endDate
+                )
+        ).thenReturn(2L);
 
-        com.opsflow.backend.dto.OperationSummary result =
+        OperationSummary result =
                 service.getSummary(
                         startDate,
                         endDate
@@ -811,10 +1028,11 @@ class OperationRecordServiceTest {
                 result.getCompleted()
         );
 
-        verify(repository).countByOperationDateBetween(
-                startDate,
-                endDate
-        );
+        verify(repository)
+                .countByOperationDateBetween(
+                        startDate,
+                        endDate
+                );
 
         verify(repository)
                 .countByStatusAndOperationDateBetween(
@@ -890,7 +1108,9 @@ class OperationRecordServiceTest {
     @Test
     void shouldCreateHistoryWhenOperationIsCreated() {
 
-        OperationRecord record = new OperationRecord();
+        OperationRecord record =
+                new OperationRecord();
+
         record.setId(1L);
         record.setTitle("System Maintenance");
         record.setStatus("PLANNED");
@@ -900,30 +1120,39 @@ class OperationRecordServiceTest {
 
         service.create(record);
 
-        verify(repository).save(record);
+        verify(repository)
+                .save(record);
 
-        verify(historyRepository).save(
-                Mockito.argThat(history ->
-                        history.getOperationId().equals(1L)
-                                && history.getEventType().equals("CREATED")
-                                && history.getOldStatus() == null
-                                && history.getNewStatus().equals("PLANNED")
-                                && history.getOperationTitle()
-                                .equals("System Maintenance")
-                )
-        );
+        verify(historyRepository)
+                .save(
+                        Mockito.argThat(history ->
+                                history.getOperationId().equals(1L)
+                                        && history.getEventType().equals("CREATED")
+                                        && history.getOldStatus() == null
+                                        && history.getNewStatus().equals("PLANNED")
+                                        && history.getOperationTitle().equals("System Maintenance")
+                                        && history.getUserId().equals(2L)
+                                        && history.getUserEmail().equals("user@opsflow.com")
+                                        && history.getUserRole().equals("USER")
+                                        && history.getUserName().equals("Standard User")
+                        )
+                );
     }
 
     @Test
     void shouldCreateUpdatedHistoryWhenStatusDoesNotChange() {
 
-        OperationRecord existingRecord = new OperationRecord();
+        OperationRecord existingRecord =
+                new OperationRecord();
+
         existingRecord.setId(1L);
         existingRecord.setTitle("System Maintenance");
         existingRecord.setDescription("Old Description");
         existingRecord.setStatus("PLANNED");
 
-        OperationRecord updatedRecord = new OperationRecord();
+        OperationRecord updatedRecord =
+                new OperationRecord();
+
         updatedRecord.setTitle("Updated Maintenance");
         updatedRecord.setDescription("Updated Description");
         updatedRecord.setOperationDate(
@@ -936,35 +1165,46 @@ class OperationRecordServiceTest {
 
         when(repository.findById(1L))
                 .thenReturn(
-                        java.util.Optional.of(existingRecord)
+                        Optional.of(existingRecord)
                 );
 
         when(repository.save(existingRecord))
                 .thenReturn(existingRecord);
 
-        service.update(1L, updatedRecord);
-
-        verify(historyRepository).save(
-                Mockito.argThat(history ->
-                        history.getOperationId().equals(1L)
-                                && history.getEventType().equals("UPDATED")
-                                && history.getOldStatus().equals("PLANNED")
-                                && history.getNewStatus().equals("PLANNED")
-                                && history.getOperationTitle()
-                                .equals("Updated Maintenance")
-                )
+        service.update(
+                1L,
+                updatedRecord
         );
+
+        verify(historyRepository)
+                .save(
+                        Mockito.argThat(history ->
+                                history.getOperationId().equals(1L)
+                                        && history.getEventType().equals("UPDATED")
+                                        && history.getOldStatus().equals("PLANNED")
+                                        && history.getNewStatus().equals("PLANNED")
+                                        && history.getOperationTitle().equals("Updated Maintenance")
+                                        && history.getUserId().equals(2L)
+                                        && history.getUserEmail().equals("user@opsflow.com")
+                                        && history.getUserRole().equals("USER")
+                                        && history.getUserName().equals("Standard User")
+                        )
+                );
     }
 
     @Test
     void shouldCreateStatusChangedHistoryWhenStatusChanges() {
 
-        OperationRecord existingRecord = new OperationRecord();
+        OperationRecord existingRecord =
+                new OperationRecord();
+
         existingRecord.setId(1L);
         existingRecord.setTitle("System Maintenance");
         existingRecord.setStatus("PLANNED");
 
-        OperationRecord updatedRecord = new OperationRecord();
+        OperationRecord updatedRecord =
+                new OperationRecord();
+
         updatedRecord.setTitle("System Maintenance");
         updatedRecord.setDescription("Status changed");
         updatedRecord.setOperationDate(
@@ -977,57 +1217,98 @@ class OperationRecordServiceTest {
 
         when(repository.findById(1L))
                 .thenReturn(
-                        java.util.Optional.of(existingRecord)
+                        Optional.of(existingRecord)
                 );
 
         when(repository.save(existingRecord))
                 .thenReturn(existingRecord);
 
-        service.update(1L, updatedRecord);
-
-        verify(historyRepository).save(
-                Mockito.argThat(history ->
-                        history.getOperationId().equals(1L)
-                                && history.getEventType()
-                                .equals("STATUS_CHANGED")
-                                && history.getOldStatus()
-                                .equals("PLANNED")
-                                && history.getNewStatus()
-                                .equals("IN_PROGRESS")
-                                && history.getOperationTitle()
-                                .equals("System Maintenance")
-                )
+        service.update(
+                1L,
+                updatedRecord
         );
+
+        verify(historyRepository)
+                .save(
+                        Mockito.argThat(history ->
+                                history.getOperationId().equals(1L)
+                                        && history.getEventType().equals("STATUS_CHANGED")
+                                        && history.getOldStatus().equals("PLANNED")
+                                        && history.getNewStatus().equals("IN_PROGRESS")
+                                        && history.getOperationTitle().equals("System Maintenance")
+                                        && history.getUserId().equals(2L)
+                                        && history.getUserEmail().equals("user@opsflow.com")
+                                        && history.getUserRole().equals("USER")
+                                        && history.getUserName().equals("Standard User")
+                        )
+                );
     }
 
     @Test
     void shouldCreateDeletedHistoryWhenOperationIsDeleted() {
 
-        OperationRecord record = new OperationRecord();
+        OperationRecord record =
+                new OperationRecord();
+
         record.setId(1L);
         record.setTitle("System Maintenance");
         record.setStatus("COMPLETED");
 
         when(repository.findById(1L))
                 .thenReturn(
-                        java.util.Optional.of(record)
+                        Optional.of(record)
                 );
 
         service.delete(1L);
 
-        verify(historyRepository).save(
-                Mockito.argThat(history ->
-                        history.getOperationId().equals(1L)
-                                && history.getEventType().equals("DELETED")
-                                && history.getOldStatus()
-                                .equals("COMPLETED")
-                                && history.getNewStatus() == null
-                                && history.getOperationTitle()
-                                .equals("System Maintenance")
-                )
-        );
+        verify(historyRepository)
+                .save(
+                        Mockito.argThat(history ->
+                                history.getOperationId().equals(1L)
+                                        && history.getEventType().equals("DELETED")
+                                        && history.getOldStatus().equals("COMPLETED")
+                                        && history.getNewStatus() == null
+                                        && history.getOperationTitle().equals("System Maintenance")
+                                        && history.getUserId().equals(2L)
+                                        && history.getUserEmail().equals("user@opsflow.com")
+                                        && history.getUserRole().equals("USER")
+                                        && history.getUserName().equals("Standard User")
+                        )
+                );
 
-        verify(repository).delete(record);
+        verify(repository)
+                .delete(record);
     }
 
+    @Test
+    void shouldThrowResourceNotFoundWhenDeletingNonExistingOperation() {
+
+        when(repository.findById(9999L))
+                .thenReturn(
+                        Optional.empty()
+                );
+
+        ResourceNotFoundException exception =
+                assertThrows(
+                        ResourceNotFoundException.class,
+                        () -> service.delete(9999L)
+                );
+
+        assertEquals(
+                "Operation not found with id: 9999",
+                exception.getMessage()
+        );
+
+        verify(repository)
+                .findById(9999L);
+
+        Mockito.verify(
+                repository,
+                Mockito.never()
+        ).delete(
+                Mockito.any(OperationRecord.class)
+        );
+
+        verifyNoInteractions(historyRepository);
+    }
 }
